@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Pokemon Battle Simulator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Arial', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        #game-container {
+            width: 800px;
+            max-width: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            position: relative;
+        }
+
+        #battle-screen {
+            height: 400px;
+            position: relative;
+            background: linear-gradient(0deg, #2d5a27 0%, #4a8b41 50%, #87ceeb 50%, #4fa4d3 100%);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .pokemon {
+            position: absolute;
+            width: 150px;
+            height: 150px;
+            transition: all 0.3s ease;
+        }
+
+        #player-pokemon {
+            bottom: 50px;
+            left: 100px;
+        }
+
+        #enemy-pokemon {
+            top: 50px;
+            right: 100px;
+        }
+
+        .health-bar {
+            width: 200px;
+            height: 20px;
+            background: #ff4444;
+            border: 2px solid #000;
+            position: relative;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .health-fill {
+            height: 100%;
+            background: #44ff44;
+            width: 100%;
+            transition: width 0.3s ease;
+        }
+
+        #player-health {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+        }
+
+        #enemy-health {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+        }
+
+        .pokemon-name {
+            color: white;
+            text-shadow: 2px 2px #000;
+            margin-bottom: 5px;
+        }
+
+        #controls {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .move-btn {
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            background: #4a90e2;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .move-btn:hover {
+            transform: translateY(-2px);
+            background: #357abd;
+        }
+
+        .move-btn:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #battle-log {
+            margin-top: 20px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 8px;
+            height: 100px;
+            overflow-y: auto;
+            font-size: 14px;
+        }
+
+        .battle-message {
+            margin: 5px 0;
+            color: #fff;
+        }
+
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+
+        #restart-btn {
+            margin-top: 10px;
+            padding: 10px 20px;
+            background: #4a90e2;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            cursor: pointer;
+        }
+
+        .attack-animation {
+            position: absolute;
+            pointer-events: none;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        .shake {
+            animation: shake 0.2s ease-in-out 3;
+        }
+
+        @keyframes flash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .flash {
+            animation: flash 0.2s ease-in-out 3;
+        }
+
+        .stats {
+            font-size: 12px;
+            margin-top: 5px;
+            color: #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="battle-screen">
+            <div id="enemy-health">
+                <div class="pokemon-name">Charizard</div>
+                <div class="health-bar"><div class="health-fill"></div></div>
+                <div class="stats">Level 50</div>
+            </div>
+            <div id="player-health">
+                <div class="pokemon-name">Blastoise</div>
+                <div class="health-bar"><div class="health-fill"></div></div>
+                <div class="stats">Level 50</div>
+            </div>
+            <div id="player-pokemon"></div>
+            <div id="enemy-pokemon"></div>
+        </div>
+        <div id="controls">
+            <button class="move-btn" onclick="useMove('Hydro Pump')">Hydro Pump</button>
+            <button class="move-btn" onclick="useMove('Ice Beam')">Ice Beam</button>
+            <button class="move-btn" onclick="useMove('Skull Bash')">Skull Bash</button>
+            <button class="move-btn" onclick="useMove('Rain Dance')">Rain Dance</button>
+        </div>
+        <div id="battle-log"></div>
+        <div id="game-over">
+            <h2 id="game-over-text"></h2>
+            <button id="restart-btn" onclick="restartGame()">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        // Pokemon class definition
+        class Pokemon {
+            constructor(name, hp, moves, svg) {
+                this.name = name;
+                this.maxHp = hp;
+                this.currentHp = hp;
+                this.moves = moves;
+                this.svg = svg;
+                this.effects = {
+                    rainDance: 0
+                };
+            }
+
+            damage(amount) {
+                this.currentHp = Math.max(0, this.currentHp - amount);
+                return this.currentHp;
+            }
+
+            heal(amount) {
+                this.currentHp = Math.min(this.maxHp, this.currentHp + amount);
+                return this.currentHp;
+            }
+
+            getHealthPercentage() {
+                return (this.currentHp / this.maxHp) * 100;
+            }
+        }
+
+        // Game state
+        const gameState = {
+            playerTurn: true,
+            gameOver: false,
+            weatherEffect: null,
+            turnCount: 0
+        };
+
+        // Pokemon SVGs
+        const blastoiseSVG = `
+            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="50" cy="50" r="40" fill="#6890F0"/>
+                <circle cx="50" cy="45" r="35" fill="#5778C7"/>
+                <rect x="30" y="60" width="40" height="20" fill="#5778C7" rx="5"/>
+                <circle cx="35" cy="45" r="8" fill="white"/>
+                <circle cx="65" cy="45" r="8" fill="white"/>
+                <circle cx="35" cy="45" r="4" fill="black"/>
+                <circle cx="65" cy="45" r="4" fill="black"/>
+                <path d="M45 55 Q50 60 55 55" stroke="black" fill="none" stroke-width="2"/>
+                <rect x="15" y="40" width="20" height="10" fill="#5778C7" transform="rotate(-20 15 40)"/>
+                <rect x="65" y="40" width="20" height="10" fill="#5778C7" transform="rotate(20 85 40)"/>
+            </svg>
+        `;
+
+        const charizardSVG = `
+            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                <path d="M50 20 L70 40 L30 40 Z" fill="#FF7B00"/>
+                <circle cx="50" cy="50" r="30" fill="#FFA046"/>
+                <path d="M50 80 L65 90 L35 90 Z" fill="#FFA046"/>
+                <circle cx="40" cy="45" r="6" fill="white"/>
+                <circle cx="60" cy="45" r="6" fill="white"/>
+                <circle cx="40" cy="45" r="3" fill="black"/>
+                <circle cx="60" cy="45" r="3" fill="black"/>
+                <path d="M45 55 Q50 60 55 55" stroke="black" fill="none" stroke-width="2"/>
+                <path d="M70 30 Q90 20 85 40" fill="#FF7B00"/>
+                <path d="M85 40 L90 20 L95 35" fill="#FF4400"/>
+            </svg>
+        `;
+
+        // Initialize Pokemon
+        const playerPokemon = new Pokemon("Blastoise", 180, {
+            "Hydro Pump": { power: 110, accuracy: 80, type: "Water" },
+            "Ice Beam": { power: 90, accuracy: 100, type: "Ice" },
+            "Skull Bash": { power: 100, accuracy: 100, type: "Normal" },
+            "Rain Dance": { power: 0, accuracy: 100, type: "Water" }
+        }, blastoiseSVG);
+
+        const enemyPokemon = new Pokemon("Charizard", 170, {
+            "Flamethrower": { power: 90, accuracy: 100, type: "Fire" },
+            "Air Slash": { power: 75, accuracy: 95, type: "Flying" },
+            "Dragon Claw": { power: 80, accuracy: 100, type: "Dragon" },
+            "Fire Blast": { power: 110, accuracy: 85, type: "Fire" }
+        }, charizardSVG);
+
+        // Initialize game elements
+        document.getElementById('player-pokemon').innerHTML = playerPokemon.svg;
+        document.getElementById('enemy-pokemon').innerHTML = enemyPokemon.svg;
+        updateHealthBars();
+
+        // Game functions
+        function updateHealthBars() {
+            document.querySelector('#player-health .health-fill').style.width = `${playerPokemon.getHealthPercentage()}%`;
+            document.querySelector('#enemy-health .health-fill').style.width = `${enemyPokemon.getHealthPercentage()}%`;
+        }
+
+        function addBattleLog(message) {
+            const log = document.getElementById('battle-log');
+            const entry = document.createElement('div');
+            entry.className = 'battle-message';
+            entry.textContent = message;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function calculateDamage(move, attacker, defender) {
+            let power = move.power;
+            const random = 0.85 + Math.random() * 0.15;
+            
+            // Type effectiveness
+            let typeMultiplier = 1;
+            if (move.type === "Water" && defender.name === "Charizard") {
+                typeMultiplier = 2;
+            } else if (move.type === "Fire" && attacker.name === "Charizard") {
+                typeMultiplier = 1.5; // STAB bonus
+            }
+
+            // Weather effects
+            if (move.type === "Water" && gameState.weatherEffect === "rain") {
+                power *= 1.5;
+            } else if (move.type === "Fire" && gameState.weatherEffect === "rain") {
+                power *= 0.5;
+            }
+
+            return Math.floor(((power * typeMultiplier * random) / 10) + 5);
+        }
+
+        async function animate(attacker, defender, moveName) {
+            const attackerElement = attacker === playerPokemon ? 
+                document.getElementById('player-pokemon') : 
+                document.getElementById('enemy-pokemon');
+            
+            const defenderElement = defender === playerPokemon ? 
+                document.getElementById('player-pokemon') : 
+                document.getElementById('enemy-pokemon');
+
+            // Attack animation
+            attackerElement.classList.add('flash');
+            await new Promise(r => setTimeout(r, 300));
+            attackerElement.classList.remove('flash');
+
+            // Hit animation
+            defenderElement.classList.add('shake');
+            await new Promise(r => setTimeout(r, 300));
+            defenderElement.classList.remove('shake');
+
+            // Special effects for certain moves
+            if (moveName === "Rain Dance") {
+                document.getElementById('battle-screen').style.background = 
+                    'linear-gradient(0deg, #2d5a27 0%, #4a8b41 50%, #4682b4 50%, #36648b 100%)';
+            }
+        }
+
+        async function useMove(moveName) {
+            if (gameState.gameOver || !gameState.playerTurn) return;
+
+            const move = playerPokemon.moves[moveName];
+            if (!move) return;
+
+            // Disable buttons during animation
+            document.querySelectorAll('.move-btn').forEach(btn => btn.disabled = true);
+            gameState.playerTurn = false;
+
+            // Check accuracy
+            if (Math.random() * 100 > move.accuracy) {
+                addBattleLog(`${playerPokemon.name}'s ${moveName} missed!`);
+                await new Promise(r => setTimeout(r, 1000));
+            } else {
+                // Handle special moves
+                if (moveName === "Rain Dance") {
+                    gameState.weatherEffect = "rain";
+                    addBattleLog("It started to rain!");
+                    await animate(playerPokemon, enemyPokemon, moveName);
+                } else {
+                    // Calculate and deal damage
+                    const damage = calculateDamage(move, playerPokemon, enemyPokemon);
+                    await animate(playerPokemon, enemyPokemon, moveName);
+                    enemyPokemon.damage(damage);
+                    updateHealthBars();
+                    addBattleLog(`${playerPokemon.name} used ${moveName}! Dealt ${damage} damage!`);
+
+                    if (enemyPokemon.currentHp <= 0) {
+                        endGame(true);
+                        return;
+                    }
+                }
+            }
+
+            // Enemy turn
+            await new Promise(r => setTimeout(r, 1000));
+            
+            // Select random enemy move
+            const enemyMoves = Object.entries(enemyPokemon.moves);
+            const [enemyMoveName, enemyMove] = enemyMoves[Math.floor(Math.random() * enemyMoves.length)];
+
+            // Enemy accuracy check
+            if (Math.random() * 100 > enemyMove.accuracy) {
+                addBattleLog(`${enemyPokemon.name}'s ${enemyMoveName} missed!`);
+            } else {
+                const damage = calculateDamage(enemyMove, enemyPokemon, playerPokemon);
+                await animate(enemyPokemon, playerPokemon, enemyMoveName);
+                playerPokemon.damage(damage);
+                updateHealthBars();
+                addBattleLog(`${enemyPokemon.name} used ${enemyMoveName}! Dealt ${damage} damage!`);
+
+                if (playerPokemon.currentHp <= 0) {
+                    endGame(false);
+                    return;
+                }
+            }
+
+            // Weather effects
+            if (gameState.weatherEffect === "rain") {
+                gameState.turnCount++;
+                if (gameState.turnCount >= 5) {
+                    gameState.weatherEffect = null;
+                    gameState.turnCount = 0;
+                    document.getElementById('battle-screen').style.background = 
+                        'linear-gradient(0deg, #2d5a27 0%, #4a8b41 50%, #87ceeb 50%, #4fa4d3 100%)';
+                    addBattleLog("The rain stopped.");
+                }
+            }
+
+            // Re-enable buttons for next turn
+            document.querySelectorAll('.move-btn').forEach(btn => btn.disabled = false);
+            gameState.playerTurn = true;
+        }
+
+        function endGame(playerWon) {
+            gameState.gameOver = true;
+            const gameOverText = document.getElementById('game-over-text');
+            gameOverText.textContent = playerWon ? "You Won!" : "You Lost!";
+            document.getElementById('game-over').style.display = 'block';
+        }
+
+        function restartGame() {
+            // Reset Pokemon HP
+            playerPokemon.currentHp = playerPokemon.maxHp;
+            enemyPokemon.currentHp = enemyPokemon.maxHp;
+            
+            // Reset game state
+            gameState.playerTurn = true;
+            gameState.gameOver = false;
+            gameState.weatherEffect = null;
+            gameState.turnCount = 0;
+            
+            // Reset UI
+            updateHealthBars();
+            document.getElementById('game-over').style.display = 'none';
+            document.getElementById('battle-log').innerHTML = '';
+            document.getElementById('battle-screen').style.background = 
+                'linear-gradient(0deg, #2d5a27 0%, #4a8b41 50%, #87ceeb 50%, #4fa4d3 100%)';
+            
+            // Enable buttons
+            document.querySelectorAll('.move-btn').forEach(btn => btn.disabled = false);
+            
+            // Add initial battle message
+            addBattleLog("Battle started! Choose your move!");
+        }
+
+        // Initial battle message
+        addBattleLog("Battle started! Choose your move!");
+    </script>
+</body>
+</html>

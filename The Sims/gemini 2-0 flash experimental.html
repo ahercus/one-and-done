@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>The Sims: One & Done</title>
+<style>
+body { margin: 0; overflow: hidden; font-family: sans-serif; background-color: #ddd; display: flex; justify-content: center; align-items: center; height: 100vh; }
+#game-container { position: relative; width: 800px; height: 600px; background-color: #fff; border: 2px solid #aaa; overflow: hidden; }
+#sim { position: absolute; width: 30px; height: 60px; background-color: #00f; transition: left 0.3s, top 0.3s; border-radius: 5px;}
+.furniture{ position: absolute; background-color: #888; border: 2px solid #999;}
+.bed{ width: 100px; height: 60px; border-radius: 5px;}
+.table{ width: 80px; height: 80px; border-radius: 5px;}
+.chair{ width: 30px; height: 50px; border-radius: 3px;}
+#ui { position: absolute; top: 0; right: 0; padding: 10px; background-color: rgba(200,200,200,0.8); }
+.need { margin-bottom: 5px; }
+.need-bar { width: 100px; height: 8px; background-color: #ddd; border: 1px solid #bbb; border-radius: 4px; display: inline-block;}
+.need-fill { height: 100%; background-color: green; border-radius: 4px; }
+button { margin: 5px; padding: 5px; cursor: pointer; }
+#notification-area { position: absolute; bottom: 10px; left: 10px; background-color: rgba(255,255,255,0.8); padding: 10px; border: 1px solid #ccc; max-width: 200px; display:none }
+.notification-message { margin-bottom: 5px; }
+.interaction-menu{position:absolute; background-color:#fff; border:1px solid #ccc; padding:5px; display:none;}
+#inventory {position: absolute; bottom:10px; right:10px; background-color: rgba(255,255,255,0.8); padding:10px; border:1px solid #ccc; max-width:200px; }
+.inventory-item{ margin-bottom: 5px; display:block;}
+
+.speech-bubble {
+            position: absolute;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            padding: 5px;
+            border-radius: 8px;
+            display: none;
+            max-width:150px;
+            pointer-events:none;
+			z-index:100;
+        }
+ .speech-bubble:before{
+			content:"";
+			position: absolute;
+			border-top: 10px solid #fff;
+			border-left: 10px solid transparent;
+			border-right: 10px solid transparent;
+			bottom: -10px;
+			left: 10px;
+
+		}
+.speech-bubble.thinking:before{
+	border-top: 10px solid #fff;
+}
+</style>
+</head>
+<body>
+<div id="game-container">
+    <div id="sim"></div>
+    <div class="furniture bed" style="left: 50px; top: 50px;"></div>
+	<div class="furniture table" style="left: 200px; top: 100px;"></div>
+	<div class="furniture chair" style="left: 200px; top: 200px;"></div>
+	<div class="furniture chair" style="left: 260px; top: 200px;"></div>
+	<div class="furniture table" style="left: 500px; top: 300px;"></div>
+	<div class="furniture chair" style="left: 500px; top: 400px;"></div>
+	<div class="furniture chair" style="left: 560px; top: 400px;"></div>
+	<div id="notification-area"></div>
+	<div id="inventory"></div>
+	<div class="interaction-menu"></div>
+	<div id="speech-bubble" class="speech-bubble"></div>
+</div>
+<div id="ui">
+    <div class="need">
+        <label>Hunger</label>
+        <div class="need-bar"><div class="need-fill" id="hunger-bar"></div></div>
+    </div>
+    <div class="need">
+        <label>Energy</label>
+        <div class="need-bar"><div class="need-fill" id="energy-bar"></div></div>
+    </div>
+    <div class="need">
+        <label>Social</label>
+        <div class="need-bar"><div class="need-fill" id="social-bar"></div></div>
+    </div>
+    <button onclick="showInteractionMenu()">Interact</button>
+	<button onclick="createItem('Book')">Create Book</button>
+	<button onclick="createItem('Toy')">Create Toy</button>
+</div>
+
+<script>
+const sim = document.getElementById('sim');
+const gameContainer = document.getElementById('game-container');
+const hungerBar = document.getElementById('hunger-bar');
+const energyBar = document.getElementById('energy-bar');
+const socialBar = document.getElementById('social-bar');
+const notificationArea = document.getElementById('notification-area');
+const interactionMenu = document.querySelector('.interaction-menu')
+const inventory = document.getElementById('inventory')
+const speechBubble = document.getElementById('speech-bubble')
+
+let simX = 100;
+let simY = 100;
+let hunger = 100;
+let energy = 100;
+let social = 100;
+let needsInterval;
+let interactionTarget = null;
+let inventoryItems = [];
+let interactionInProgress = false;
+
+
+const furniture = [
+	{ type: 'bed', x: 50, y: 50, width: 100, height: 60 },
+	{ type: 'table', x: 200, y: 100, width: 80, height: 80 },
+	{ type: 'chair', x: 200, y: 200, width: 30, height: 50 },
+	{ type: 'chair', x: 260, y: 200, width: 30, height: 50 },
+	{ type: 'table', x: 500, y: 300, width: 80, height: 80 },
+	{ type: 'chair', x: 500, y: 400, width: 30, height: 50 },
+	{ type: 'chair', x: 560, y: 400, width: 30, height: 50 }
+];
+
+
+function updateSimPosition(){
+    sim.style.left = simX + 'px';
+    sim.style.top = simY + 'px';
+}
+
+function updateNeeds(){
+	if(interactionInProgress) return;
+    hunger = Math.max(0, hunger - 0.3);
+    energy = Math.max(0, energy - 0.2);
+    social = Math.max(0, social - 0.1);
+
+    hungerBar.style.width = hunger + '%';
+    energyBar.style.width = energy + '%';
+    socialBar.style.width = social + '%';
+
+	hungerBar.style.backgroundColor = hunger > 50 ? 'green' : hunger > 25 ? 'orange' : 'red'
+	energyBar.style.backgroundColor = energy > 50 ? 'green' : energy > 25 ? 'orange' : 'red'
+	socialBar.style.backgroundColor = social > 50 ? 'green' : social > 25 ? 'orange' : 'red'
+
+    if (hunger === 0 || energy === 0 || social === 0) {
+        showNotification("A need has reached zero!");
+    }
+}
+
+function showNotification(message){
+	const notification = document.createElement('div');
+	notification.classList.add('notification-message');
+	notification.textContent = message;
+	notificationArea.appendChild(notification);
+	notificationArea.style.display = 'block';
+	setTimeout(() => {
+		notification.remove();
+		if(notificationArea.children.length === 0) notificationArea.style.display = 'none';
+	}, 3000)
+}
+
+
+function showInteractionMenu(){
+	if(interactionInProgress) return;
+	interactionMenu.innerHTML = '';
+    interactionMenu.style.display = 'block';
+	interactionMenu.style.left = simX + 30 + 'px';
+	interactionMenu.style.top = simY + 'px';
+
+
+	furniture.forEach(f => {
+		let distance = Math.sqrt(Math.pow(simX - f.x, 2) + Math.pow(simY - f.y, 2));
+		if(distance < 100){
+			const interactionButton = document.createElement('button');
+			interactionButton.textContent = "Use " + f.type;
+			interactionButton.onclick = () => interactWithObject(f);
+			interactionMenu.appendChild(interactionButton)
+		}
+	})
+	if(inventoryItems.length > 0){
+		inventoryItems.forEach((item, index) => {
+			const interactionButton = document.createElement('button');
+			interactionButton.textContent = "Use " + item;
+			interactionButton.onclick = () => interactWithItem(item, index);
+			interactionMenu.appendChild(interactionButton)
+		})
+	}
+
+
+    document.addEventListener('click', closeInteractionMenuOutside);
+}
+
+
+function closeInteractionMenuOutside(event) {
+	if(!interactionMenu.contains(event.target)) {
+		interactionMenu.style.display = 'none';
+		document.removeEventListener('click', closeInteractionMenuOutside);
+	}
+}
+
+function interactWithObject(obj){
+	interactionTarget = obj;
+	interactionMenu.style.display = 'none';
+	interactionInProgress = true;
+	let actionText = ""
+	switch(obj.type){
+		case 'bed':
+			actionText = "Sleeping"
+			moveTo(obj.x - 20,obj.y + 20, () => {
+			showSpeechBubble("Zzz...", 2000, "thinking");
+				setTimeout(() => {
+					energy = Math.min(100, energy + 60);
+					updateNeeds();
+					interactionInProgress = false
+					}, 3000)
+			})
+			break;
+		case 'table':
+			actionText = "Eating"
+			moveTo(obj.x + 50, obj.y + 50, () => {
+				showSpeechBubble("Yum!", 2000);
+				setTimeout(() => {
+					hunger = Math.min(100, hunger + 40);
+					updateNeeds();
+					interactionInProgress = false
+					}, 3000)
+			})
+			break;
+		case 'chair':
+			actionText = 'Socializing';
+			moveTo(obj.x - 20, obj.y + 20, () => {
+				showSpeechBubble("Hello!", 2000)
+				setTimeout(() => {
+					social = Math.min(100, social + 30);
+					updateNeeds();
+					interactionInProgress = false
+					},3000)
+			})
+			break;
+	}
+	showNotification("Sim is " + actionText)
+
+}
+function interactWithItem(item, index){
+	interactionMenu.style.display = 'none';
+	interactionInProgress = true;
+	let actionText = "";
+	switch(item){
+		case 'Book':
+			actionText = 'Reading Book'
+			showSpeechBubble("Interesting!", 2000)
+			setTimeout(() => {
+				social = Math.min(100, social + 15);
+				hunger = Math.max(0, hunger - 5);
+				energy = Math.max(0, energy - 5);
+				updateNeeds();
+				interactionInProgress = false;
+				inventoryItems.splice(index,1);
+				renderInventory();
+			}, 3000)
+			break;
+
+		case 'Toy':
+			actionText = 'Playing with Toy';
+			showSpeechBubble("Yay!", 2000);
+			setTimeout(() => {
+				social = Math.min(100, social + 20);
+				hunger = Math.max(0, hunger - 3);
+				energy = Math.max(0, energy - 3);
+				updateNeeds();
+				interactionInProgress = false;
+				inventoryItems.splice(index,1);
+				renderInventory();
+			}, 3000)
+			break;
+	}
+	showNotification("Sim is " + actionText)
+
+}
+
+function moveTo(targetX, targetY, callback){
+	const speed = 3;
+	const dx = targetX - simX;
+	const dy = targetY - simY;
+	const dist = Math.sqrt(dx*dx + dy*dy);
+	if(dist <= speed){
+		simX = targetX;
+		simY = targetY;
+		updateSimPosition();
+		if(callback) callback();
+		return;
+	}
+
+	const vx = dx / dist;
+	const vy = dy / dist;
+
+	simX += vx * speed;
+	simY += vy * speed;
+	updateSimPosition();
+
+	requestAnimationFrame(() => moveTo(targetX,targetY, callback));
+}
+
+function createItem(itemName){
+	inventoryItems.push(itemName);
+	renderInventory();
+}
+function renderInventory(){
+	inventory.innerHTML = '';
+	inventoryItems.forEach(item => {
+		const inventoryItemElement = document.createElement('div');
+		inventoryItemElement.classList.add('inventory-item');
+		inventoryItemElement.textContent = item;
+		inventory.appendChild(inventoryItemElement);
+	})
+}
+function showSpeechBubble(message, duration, style = null){
+	speechBubble.textContent = message;
+	speechBubble.style.display = 'block';
+	speechBubble.style.left = simX + 30 + 'px';
+	speechBubble.style.top = simY - 20 + 'px'
+
+	if(style) speechBubble.classList.add(style)
+	setTimeout(() => {
+		speechBubble.style.display = 'none';
+		if(style) speechBubble.classList.remove(style)
+
+	},duration)
+}
+function handleInput(event) {
+	if(interactionInProgress) return;
+    const key = event.key.toLowerCase();
+    let newX = simX;
+    let newY = simY;
+    const moveSpeed = 10;
+
+    if (key === 'a' || key === 'arrowleft')  newX -= moveSpeed;
+    if (key === 'd' || key === 'arrowright') newX += moveSpeed;
+    if (key === 'w' || key === 'arrowup')    newY -= moveSpeed;
+    if (key === 's' || key === 'arrowdown')  newY += moveSpeed;
+
+	const simRect = {x: newX, y: newY, width: 30, height:60}
+	if(!checkCollisionWithFurniture(simRect)){
+	    simX = newX;
+		simY = newY;
+    	updateSimPosition();
+	}
+}
+
+
+function checkCollisionWithFurniture(rect){
+	for(const f of furniture){
+		const furnitureRect = {x: f.x, y: f.y, width: f.width, height: f.height};
+		if(rect.x < furnitureRect.x + furnitureRect.width &&
+		rect.x + rect.width > furnitureRect.x &&
+		rect.y < furnitureRect.y + furnitureRect.height &&
+		rect.y + rect.height > furnitureRect.y
+		){
+			return true
+		}
+	}
+	return false;
+}
+
+
+
+document.addEventListener('keydown', handleInput);
+needsInterval = setInterval(updateNeeds, 1000);
+updateSimPosition();
+</script>
+</body>
+</html>

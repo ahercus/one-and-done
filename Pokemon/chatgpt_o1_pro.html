@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pokemon-Inspired Mini Game - ONE AND DONE</title>
+  <style>
+    /* =========================================
+       GLOBAL & RESET
+    ========================================== */
+    * {
+      box-sizing: border-box;
+      margin: 0; 
+      padding: 0;
+      font-family: sans-serif;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      width: 100vw;
+      height: 100vh;
+      background: #fafafa;
+      overflow: hidden;
+      color: #333;
+    }
+    h1, h2, h3 {
+      margin: 0.5em 0;
+      text-align: center;
+    }
+    button {
+      cursor: pointer;
+      border: none;
+      padding: 0.5em 1em;
+      margin: 0.2em;
+      border-radius: 4px;
+      background-color: #777;
+      color: #fff;
+      font-weight: bold;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #555;
+    }
+
+    /* =========================================
+       GAME CONTAINER
+    ========================================== */
+    #game-container {
+      position: relative;
+      width: 800px;
+      height: 480px;
+      background: #a5d6a7; /* grassy green background */
+      border: 2px solid #555;
+      overflow: hidden;
+      margin-top: 0.5em;
+    }
+
+    /* MAP TILES (we'll generate 20 x 12) */
+    .tile {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      background: #c5e1a5;
+      border: 1px solid #9ccc65;
+    }
+
+    /* TRAINER SPRITE */
+    #trainer {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      transition: transform 0.1s linear;
+    }
+    #trainer svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* DIALOG BOX / MESSAGES */
+    #dialog {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: rgba(255,255,255, 0.9);
+      padding: 0.5em;
+      font-size: 1em;
+      display: none;
+    }
+    #dialog p {
+      margin: 0.5em 0;
+    }
+
+    /* =========================================
+       BATTLE SCREEN
+    ========================================== */
+    #battle-screen {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      background: #f1f8e9;
+      display: none;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1em;
+    }
+    #battle-monsters {
+      display: flex;
+      width: 100%;
+      justify-content: space-around;
+      align-items: center;
+      flex: 1;
+    }
+    .monster-display {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .monster-display h3 {
+      margin-bottom: 0.3em;
+    }
+    .monster-display .svg-container {
+      width: 120px;
+      height: 120px;
+      margin-bottom: 0.3em;
+    }
+    .monster-display .hp-bar-outer {
+      width: 150px;
+      height: 12px;
+      background: #888;
+      border: 2px solid #555;
+      margin-top: 0.2em;
+      position: relative;
+    }
+    .monster-display .hp-bar-inner {
+      height: 100%;
+      background: #4caf50;
+      width: 100%;
+      transition: width 0.2s;
+    }
+    #battle-text {
+      min-height: 2em;
+      margin-bottom: 1em;
+      text-align: center;
+      font-weight: bold;
+    }
+    #battle-options {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 1em;
+    }
+    #battle-options button {
+      margin: 0.3em;
+    }
+
+    /* FLASH ANIMATION (for catches, etc.) */
+    @keyframes catch-flash {
+      0%, 100% { background-color: #fff; }
+      50% { background-color: #ff0; }
+    }
+    .flash {
+      animation: catch-flash 0.4s ease-in-out 2;
+    }
+  </style>
+</head>
+<body>
+<h1>POKEMON-Inspired Game (ONE AND DONE)</h1>
+<p>Use Arrow Keys (↑ ↓ ← →) to move. Encounter random wild monsters. Battle or catch them!</p>
+
+<div id="game-container">
+  <!-- Overworld tiles (20 columns x 12 rows) -->
+  <div id="tiles-container"></div>
+
+  <!-- Trainer sprite -->
+  <div id="trainer">
+    <svg viewBox="0 0 100 100">
+      <circle cx="50" cy="35" r="15" fill="#ffcc80" stroke="#333" stroke-width="2"/>
+      <rect x="35" y="50" width="30" height="40" fill="#2196f3"/>
+      <rect x="45" y="75" width="10" height="15" fill="#fff"/>
+    </svg>
+  </div>
+
+  <!-- Dialog box for overworld messages -->
+  <div id="dialog">
+    <p id="dialog-text"></p>
+  </div>
+
+  <!-- BATTLE SCREEN -->
+  <div id="battle-screen">
+    <div id="battle-monsters">
+      <!-- Opponent Monster -->
+      <div class="monster-display" id="opponent-info">
+        <h3>Wild ???</h3>
+        <div class="svg-container"></div>
+        <div class="hp-bar-outer">
+          <div class="hp-bar-inner"></div>
+        </div>
+        <p><span class="hp-label"></span></p>
+      </div>
+      <!-- Player Monster -->
+      <div class="monster-display" id="player-info">
+        <h3>Your Monster</h3>
+        <div class="svg-container"></div>
+        <div class="hp-bar-outer">
+          <div class="hp-bar-inner"></div>
+        </div>
+        <p><span class="hp-label"></span></p>
+      </div>
+    </div>
+    <div id="battle-text"></div>
+    <div id="battle-options">
+      <button id="btn-attack">Attack</button>
+      <button id="btn-special">Special</button>
+      <button id="btn-catch">Catch</button>
+      <button id="btn-run">Run</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* 
+  ======================================================================
+  POKEMON-INSPIRED GAME: Single-file HTML/CSS/JS with no external libs
+  - Overworld movement (arrow keys) on a grid
+  - Random encounters
+  - Simple turn-based battle
+  - Attempt to catch monsters
+  - Simple stats & multiple monsters
+  ======================================================================
+*/
+
+/* GLOBAL GAME STATE */
+const GAME = {
+  gridCols: 20,
+  gridRows: 12,
+  tileSize: 40,
+  trainerPos: { x: 5, y: 5 },
+  inDialog: false,
+  inBattle: false,
+  monsterList: [
+    {
+      name: 'Flamester',
+      maxHp: 50,
+      currentHp: 50,
+      attack: 10,
+      special: 15,
+      svg: `<svg viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="40" fill="orange" stroke="red" stroke-width="4"/>
+              <path d="M30,70 Q50,10 70,70" fill="yellow"/>
+            </svg>`
+    },
+    {
+      name: 'Aquabeast',
+      maxHp: 60,
+      currentHp: 60,
+      attack: 8,
+      special: 12,
+      svg: `<svg viewBox="0 0 100 100">
+              <rect x="20" y="20" width="60" height="60" rx="10" ry="10" fill="lightblue" stroke="blue" stroke-width="4"/>
+              <circle cx="40" cy="40" r="5" fill="white"/>
+              <circle cx="60" cy="40" r="5" fill="white"/>
+            </svg>`
+    },
+    {
+      name: 'Electrix',
+      maxHp: 45,
+      currentHp: 45,
+      attack: 12,
+      special: 20,
+      svg: `<svg viewBox="0 0 100 100">
+              <polygon points="50,10 35,45 65,45 30,90 60,60 40,60" fill="yellow" stroke="gold" stroke-width="4"/>
+            </svg>`
+    },
+    {
+      name: 'Leafbuddy',
+      maxHp: 55,
+      currentHp: 55,
+      attack: 9,
+      special: 14,
+      svg: `<svg viewBox="0 0 100 100">
+              <path d="M50,10 C30,30 30,70 50,90 C70,70 70,30 50,10" fill="green" stroke="darkgreen" stroke-width="4"/>
+            </svg>`
+    }
+  ],
+  playerMonster: {
+    name: 'Seedling',
+    maxHp: 50,
+    currentHp: 50,
+    attack: 8,
+    special: 12,
+    svg: `<svg viewBox="0 0 100 100">
+            <path d="M50,20 C40,30 40,50 50,60 C60,50 60,30 50,20" fill="limegreen" stroke="green" stroke-width="4"/>
+            <circle cx="50" cy="70" r="6" fill="brown"/>
+          </svg>`
+  },
+  inventory: {
+    pokeballs: 5
+  }
+};
+
+/* DOM ELEMENTS */
+const container = document.getElementById('game-container');
+const tilesContainer = document.getElementById('tiles-container');
+const trainerEl = document.getElementById('trainer');
+const dialogEl = document.getElementById('dialog');
+const dialogTextEl = document.getElementById('dialog-text');
+const battleScreenEl = document.getElementById('battle-screen');
+const opponentInfoEl = document.getElementById('opponent-info');
+const playerInfoEl = document.getElementById('player-info');
+const battleTextEl = document.getElementById('battle-text');
+const btnAttack = document.getElementById('btn-attack');
+const btnSpecial = document.getElementById('btn-special');
+const btnCatch = document.getElementById('btn-catch');
+const btnRun = document.getElementById('btn-run');
+
+/* =========================================================
+   OVERWORLD SETUP
+========================================================= */
+function createTiles() {
+  for (let r = 0; r < GAME.gridRows; r++) {
+    for (let c = 0; c < GAME.gridCols; c++) {
+      const tile = document.createElement('div');
+      tile.classList.add('tile');
+      tile.style.left = c * GAME.tileSize + 'px';
+      tile.style.top = r * GAME.tileSize + 'px';
+      tilesContainer.appendChild(tile);
+    }
+  }
+}
+createTiles();
+
+function updateTrainerPosition() {
+  trainerEl.style.transform = `translate(${GAME.trainerPos.x * GAME.tileSize}px, ${GAME.trainerPos.y * GAME.tileSize}px)`;
+}
+updateTrainerPosition();
+
+document.addEventListener('keydown', (e) => {
+  if (GAME.inDialog || GAME.inBattle) {
+    // Pressing Enter can close dialog if open
+    if (e.key === 'Enter' && GAME.inDialog) {
+      closeDialog();
+    }
+    return;
+  }
+  let moved = false;
+  let dx = 0, dy = 0;
+  if (e.key === 'ArrowUp') { dy = -1; moved = true; }
+  if (e.key === 'ArrowDown') { dy = 1; moved = true; }
+  if (e.key === 'ArrowLeft') { dx = -1; moved = true; }
+  if (e.key === 'ArrowRight') { dx = 1; moved = true; }
+
+  if (moved) {
+    const newX = GAME.trainerPos.x + dx;
+    const newY = GAME.trainerPos.y + dy;
+    // Check boundaries
+    if (newX >= 0 && newX < GAME.gridCols && newY >= 0 && newY < GAME.gridRows) {
+      GAME.trainerPos.x = newX;
+      GAME.trainerPos.y = newY;
+      updateTrainerPosition();
+      // Random encounter chance
+      if (Math.random() < 0.2) {
+        startEncounter();
+      }
+    }
+  }
+});
+
+/* DIALOG FUNCTIONS */
+function openDialog(text) {
+  dialogEl.style.display = 'block';
+  dialogTextEl.textContent = text;
+  GAME.inDialog = true;
+}
+function closeDialog() {
+  dialogEl.style.display = 'none';
+  GAME.inDialog = false;
+}
+
+/* =========================================================
+   BATTLE / ENCOUNTERS
+========================================================= */
+let currentOpponent = null;
+
+function startEncounter() {
+  // Pick random monster from list
+  const idx = Math.floor(Math.random() * GAME.monsterList.length);
+  currentOpponent = JSON.parse(JSON.stringify(GAME.monsterList[idx])); // copy
+  currentOpponent.currentHp = currentOpponent.maxHp;
+
+  enterBattle(currentOpponent);
+}
+
+function enterBattle(opponent) {
+  GAME.inBattle = true;
+  battleScreenEl.style.display = 'flex';
+
+  // Initialize opponent UI
+  opponentInfoEl.querySelector('h3').textContent = `Wild ${opponent.name}`;
+  opponentInfoEl.querySelector('.svg-container').innerHTML = opponent.svg;
+  updateHpBar(opponentInfoEl.querySelector('.hp-bar-inner'), opponent.currentHp, opponent.maxHp);
+  opponentInfoEl.querySelector('.hp-label').textContent = `${opponent.currentHp} / ${opponent.maxHp}`;
+
+  // Initialize player monster UI
+  playerInfoEl.querySelector('h3').textContent = GAME.playerMonster.name;
+  playerInfoEl.querySelector('.svg-container').innerHTML = GAME.playerMonster.svg;
+  updateHpBar(playerInfoEl.querySelector('.hp-bar-inner'), GAME.playerMonster.currentHp, GAME.playerMonster.maxHp);
+  playerInfoEl.querySelector('.hp-label').textContent = `${GAME.playerMonster.currentHp} / ${GAME.playerMonster.maxHp}`;
+
+  battleTextEl.textContent = `A wild ${opponent.name} appeared!`;
+}
+
+/* HP BAR UPDATE */
+function updateHpBar(barEl, current, max) {
+  const pct = Math.max(0, Math.floor((current / max) * 100));
+  barEl.style.width = pct + '%';
+}
+
+/* BATTLE BUTTON HANDLERS */
+btnAttack.addEventListener('click', () => {
+  if (!GAME.inBattle) return;
+  playerAttack('attack');
+});
+btnSpecial.addEventListener('click', () => {
+  if (!GAME.inBattle) return;
+  playerAttack('special');
+});
+btnCatch.addEventListener('click', () => {
+  if (!GAME.inBattle) return;
+  catchAttempt();
+});
+btnRun.addEventListener('click', () => {
+  if (!GAME.inBattle) return;
+  runAway();
+});
+
+/* PLAYER ATTACK */
+function playerAttack(type) {
+  const dmg = (type === 'attack') ? GAME.playerMonster.attack : GAME.playerMonster.special;
+  // Opponent takes damage
+  currentOpponent.currentHp -= dmg;
+  battleTextEl.textContent = `You used ${type.toUpperCase()}! Dealt ${dmg} damage to ${currentOpponent.name}.`;
+  updateHpBar(opponentInfoEl.querySelector('.hp-bar-inner'), currentOpponent.currentHp, currentOpponent.maxHp);
+  opponentInfoEl.querySelector('.hp-label').textContent = `${Math.max(0, currentOpponent.currentHp)} / ${currentOpponent.maxHp}`;
+  checkOpponentFaint();
+
+  // If still in battle, opponent attacks back
+  if (GAME.inBattle) {
+    setTimeout(() => {
+      const oDmg = (Math.random() < 0.3) ? currentOpponent.special : currentOpponent.attack;
+      GAME.playerMonster.currentHp -= oDmg;
+      battleTextEl.textContent += ` The wild ${currentOpponent.name} struck back for ${oDmg}!`;
+      updateHpBar(playerInfoEl.querySelector('.hp-bar-inner'), GAME.playerMonster.currentHp, GAME.playerMonster.maxHp);
+      playerInfoEl.querySelector('.hp-label').textContent = `${Math.max(0, GAME.playerMonster.currentHp)} / ${GAME.playerMonster.maxHp}`;
+      checkPlayerFaint();
+    }, 600);
+  }
+}
+
+function checkOpponentFaint() {
+  if (currentOpponent.currentHp <= 0) {
+    currentOpponent.currentHp = 0;
+    battleTextEl.textContent = `You defeated the wild ${currentOpponent.name}!`;
+    setTimeout(() => {
+      exitBattle();
+    }, 800);
+  }
+}
+
+function checkPlayerFaint() {
+  if (GAME.playerMonster.currentHp <= 0) {
+    GAME.playerMonster.currentHp = 0;
+    battleTextEl.textContent = `Your monster fainted! Returning to overworld...`;
+    setTimeout(() => {
+      // "Revive" player monster
+      GAME.playerMonster.currentHp = GAME.playerMonster.maxHp;
+      exitBattle();
+    }, 1000);
+  }
+}
+
+/* CATCH ATTEMPT */
+function catchAttempt() {
+  if (GAME.inventory.pokeballs <= 0) {
+    battleTextEl.textContent = `You're out of pokeballs!`;
+    return;
+  }
+  GAME.inventory.pokeballs--;
+  // Simple formula: chance = (opponent's maxHp - currentHp) / maxHp
+  // e.g. if opponent is low HP, higher chance
+  const chance = (currentOpponent.maxHp - currentOpponent.currentHp) / currentOpponent.maxHp;
+  if (Math.random() < chance) {
+    // success
+    flashOpponent();
+    battleTextEl.textContent = `You caught the wild ${currentOpponent.name}!`;
+    setTimeout(() => {
+      exitBattle();
+    }, 800);
+  } else {
+    battleTextEl.textContent = `Oh no! The wild ${currentOpponent.name} broke free!`;
+    // Opponent attacks
+    setTimeout(() => {
+      const oDmg = (Math.random() < 0.3) ? currentOpponent.special : currentOpponent.attack;
+      GAME.playerMonster.currentHp -= oDmg;
+      battleTextEl.textContent += ` It attacked for ${oDmg}!`;
+      updateHpBar(playerInfoEl.querySelector('.hp-bar-inner'), GAME.playerMonster.currentHp, GAME.playerMonster.maxHp);
+      playerInfoEl.querySelector('.hp-label').textContent = `${Math.max(0, GAME.playerMonster.currentHp)} / ${GAME.playerMonster.maxHp}`;
+      checkPlayerFaint();
+    }, 600);
+  }
+}
+
+/* RUN AWAY */
+function runAway() {
+  battleTextEl.textContent = `You ran away from ${currentOpponent.name}!`;
+  setTimeout(() => {
+    exitBattle();
+  }, 800);
+}
+
+/* EXIT BATTLE */
+function exitBattle() {
+  GAME.inBattle = false;
+  battleScreenEl.style.display = 'none';
+  currentOpponent = null;
+}
+
+/* Flash animation on opponent for successful catch */
+function flashOpponent() {
+  opponentInfoEl.classList.add('flash');
+  setTimeout(() => opponentInfoEl.classList.remove('flash'), 800);
+}
+
+/* INITIAL WELCOME MESSAGE */
+openDialog('Welcome to the mini "Pokemon-Inspired" game! Use arrow keys to move around, 20% chance for random encounters.');
+
+</script>
+</body>
+</html>

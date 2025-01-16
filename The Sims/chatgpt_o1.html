@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mini-Sims</title>
+  <style>
+    /* Reset */
+    html, body {
+      margin: 0; 
+      padding: 0;
+      background: #eee;
+      height: 100%; 
+      width: 100%;
+      font-family: sans-serif;
+      overflow: hidden; 
+      user-select: none;
+    }
+    #game {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+      background: #87CEFA; /* "Sky" */
+    }
+    #uiBar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      background: rgba(0,0,0,0.2);
+      color: #fff;
+      padding: 6px;
+      font-size: 14px;
+      display: flex;
+      justify-content: space-around;
+      z-index: 2;
+    }
+    .needBar {
+      width: 100px;
+      height: 14px;
+      background: #444;
+      position: relative;
+      border-radius: 4px;
+      margin: 0 4px;
+      overflow: hidden;
+    }
+    .needFill {
+      height: 100%;
+      background: #0f0;
+      transition: width 0.2s linear;
+    }
+    #toggleWallsBtn {
+      cursor: pointer;
+      background: #222;
+      border: none;
+      color: #fff;
+      padding: 4px 6px;
+      font-size: 14px;
+      border-radius: 4px;
+    }
+    #toggleWallsBtn:hover {
+      background: #444;
+    }
+
+    /* Container for the “house” or “lot” */
+    #houseContainer {
+      position: absolute;
+      width: 1200px;
+      height: 800px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #AACF8A; /* “Grass” */
+      overflow: hidden;
+      border: 4px solid #666;
+      box-sizing: border-box;
+    }
+
+    /* Furniture / House objects */
+    .object {
+      position: absolute;
+      cursor: pointer;
+      user-select: none;
+    }
+    /* Basic “bed” object */
+    .bed {
+      width: 80px;
+      height: 40px;
+      background: #996633;
+    }
+    .bed::before {
+      content: "";
+      display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%; 
+      height: 20px;
+      background: #CC9966; /* pillow area */
+    }
+    /* Basic “fridge” object */
+    .fridge {
+      width: 40px;
+      height: 60px;
+      background: #aaa;
+      border: 2px solid #888;
+      box-sizing: border-box;
+    }
+    /* Basic “toilet” object */
+    .toilet {
+      width: 30px;
+      height: 40px;
+      background: #fff;
+      border: 2px solid #ccc;
+      box-sizing: border-box;
+      border-bottom-left-radius: 50% 20px;
+      border-bottom-right-radius: 50% 20px;
+    }
+    /* Basic “sink” object */
+    .sink {
+      width: 40px;
+      height: 20px;
+      background: #eee;
+      border: 1px solid #999;
+      box-sizing: border-box;
+      border-radius: 4px;
+    }
+
+    /* The playable sim (SVG character) */
+    #simCharacter {
+      position: absolute;
+      width: 64px; 
+      height: 64px;
+      pointer-events: none; /* so we can click objects behind the sim */
+      transform-origin: center;
+    }
+
+    /* Minimal “Walls” styling */
+    .wall {
+      position: absolute;
+      background: #CCC; 
+      z-index: 1;
+    }
+    /* We’ll toggle them on/off for fun */
+
+    /* Basic floating label (actions) */
+    #actionLabel {
+      position: absolute;
+      background: rgba(0,0,0,0.7);
+      color: #fff;
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 14px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 3;
+    }
+  </style>
+</head>
+
+<body>
+<div id="game">
+  <!-- UI -->
+  <div id="uiBar">
+    <div>Energy</div>
+    <div class="needBar">
+      <div class="needFill" id="energyFill" style="width:100%"></div>
+    </div>
+    <div>Hunger</div>
+    <div class="needBar">
+      <div class="needFill" id="hungerFill" style="width:100%"></div>
+    </div>
+    <div>Bladder</div>
+    <div class="needBar">
+      <div class="needFill" id="bladderFill" style="width:100%"></div>
+    </div>
+    <div>Hygiene</div>
+    <div class="needBar">
+      <div class="needFill" id="hygieneFill" style="width:100%"></div>
+    </div>
+    <button id="toggleWallsBtn">Toggle Walls</button>
+  </div>
+  
+  <!-- House container -->
+  <div id="houseContainer">
+    <!-- Some walls (we’ll toggle visibility) -->
+    <!-- wall format: left, top, width, height -->
+    <div class="wall" style="left:100px; top:100px; width:200px; height:10px;"></div>
+    <div class="wall" style="left:300px; top:100px; width:10px; height:200px;"></div>
+    <div class="wall" style="left:100px; top:300px; width:210px; height:10px;"></div>
+    <div class="wall" style="left:100px; top:100px; width:10px; height:210px;"></div>
+    
+    <!-- Objects -->
+    <div class="object bed" style="left:120px; top:120px;" data-objtype="bed"></div>
+    <div class="object fridge" style="left:220px; top:120px;" data-objtype="fridge"></div>
+    <div class="object toilet" style="left:120px; top:200px;" data-objtype="toilet"></div>
+    <div class="object sink" style="left:180px; top:200px;" data-objtype="sink"></div>
+
+    <!-- Sim character SVG. We’ll rotate it or move it around. -->
+    <svg id="simCharacter" viewBox="0 0 64 64">
+      <!-- Simple cartoon shape: body, head, arms, legs -->
+      <circle cx="32" cy="18" r="8" fill="#FCC" />
+      <rect x="26" y="26" width="12" height="20" fill="#3C9" />
+      <line x1="20" y1="28" x2="26" y2="36" stroke="#FCC" stroke-width="4" />
+      <line x1="44" y1="28" x2="38" y2="36" stroke="#FCC" stroke-width="4" />
+      <line x1="26" y1="46" x2="24" y2="56" stroke="#FCC" stroke-width="4" />
+      <line x1="38" y1="46" x2="40" y2="56" stroke="#FCC" stroke-width="4" />
+      <!-- A green plumbob above the head, just for Sims vibe -->
+      <polygon points="32,0 28,8 32,6 36,8" fill="#3f3" />
+    </svg>
+  </div>
+
+  <!-- Action label for “Performing action” -->
+  <div id="actionLabel">Doing Something...</div>
+</div>
+
+<script>
+/*
+  Minimal "Sims-like" life simulation (no external dependencies):
+  - A single sim with four needs (energy, hunger, bladder, hygiene).
+  - Basic 2D movement: click an object to interact; the sim walks to it, performs an action.
+  - Each object satisfies a certain need: bed=energy, fridge=hunger, toilet=bladder, sink=hygiene.
+  - Toggling walls on/off for visual clarity.
+  - Very simplistic example. 
+*/
+
+/********************
+ * Data & DOM Setup
+ ********************/
+const houseContainer = document.getElementById("houseContainer");
+const simCharacter = document.getElementById("simCharacter");
+const actionLabel = document.getElementById("actionLabel");
+
+let wallsVisible = true;
+document.getElementById("toggleWallsBtn").addEventListener("click", () => {
+  wallsVisible = !wallsVisible;
+  Array.from(document.getElementsByClassName("wall")).forEach(w => {
+    w.style.display = wallsVisible ? "block" : "none";
+  });
+});
+
+// Track needs in [0..100].
+let energy = 100, hunger = 100, bladder = 100, hygiene = 100;
+
+// For displaying in the UI bars
+const energyFill = document.getElementById("energyFill");
+const hungerFill = document.getElementById("hungerFill");
+const bladderFill = document.getElementById("bladderFill");
+const hygieneFill = document.getElementById("hygieneFill");
+
+function updateNeedBars() {
+  energyFill.style.width = energy + "%";
+  hungerFill.style.width = hunger + "%";
+  bladderFill.style.width = bladder + "%";
+  hygieneFill.style.width = hygiene + "%";
+}
+
+/********************
+ * Sim Movement
+ ********************/
+let simX = 200;
+let simY = 200;
+let simAngle = 0;
+
+function placeSim() {
+  simCharacter.style.left = (simX - 32) + "px";
+  simCharacter.style.top = (simY - 44) + "px"; // shift up so feet are near simY
+  simCharacter.style.transform = `rotate(${simAngle}deg)`;
+}
+placeSim();
+
+// Very basic path: We’ll just do direct line from current to target (no obstacle avoidance)
+let targetX = simX, targetY = simY;
+let isWalking = false;
+let walkingSpeed = 80; // px/sec
+
+// Simple bounding box check for house container
+function clampSimPos() {
+  if (simX < 0) simX = 0;
+  if (simY < 0) simY = 0;
+  if (simX > houseContainer.offsetWidth) simX = houseContainer.offsetWidth;
+  if (simY > houseContainer.offsetHeight) simY = houseContainer.offsetHeight;
+}
+
+function updateSimPosition(dt) {
+  const dx = targetX - simX;
+  const dy = targetY - simY;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  if (dist > 1) {
+    isWalking = true;
+    const angleRad = Math.atan2(dy, dx);
+    simAngle = angleRad * (180/Math.PI);
+    const step = walkingSpeed * dt;
+    if (step < dist) {
+      simX += Math.cos(angleRad)*step;
+      simY += Math.sin(angleRad)*step;
+    } else {
+      simX = targetX;
+      simY = targetY;
+    }
+    clampSimPos();
+  } else {
+    isWalking = false;
+  }
+  placeSim();
+}
+
+/********************
+ * Interaction Logic
+ ********************/
+// When user clicks on an object, we’ll set sim’s target to that object’s position. 
+// Then when sim arrives, we’ll do an action that modifies needs.
+let currentAction = null;
+let actionTimer = 0;
+const ACTION_DURATION = 3; // seconds to fill up need
+
+function handleObjectClick(e) {
+  if (!e.target.classList.contains("object")) return;
+  const obj = e.target;
+  const rect = obj.getBoundingClientRect();
+  // House container offset:
+  const containerRect = houseContainer.getBoundingClientRect();
+  // center of object
+  const centerX = rect.left - containerRect.left + rect.width/2;
+  const centerY = rect.top - containerRect.top + rect.height/2;
+  // set target for sim
+  targetX = centerX;
+  targetY = centerY + 20; // stand “in front” a bit
+  // set action
+  currentAction = obj.getAttribute("data-objtype");
+}
+
+// Capture clicks in houseContainer
+houseContainer.addEventListener("click", handleObjectClick);
+
+function performAction(objType, dt) {
+  // Deplete or replenish needs based on the object
+  actionTimer += dt;
+  if (actionTimer >= ACTION_DURATION) {
+    // finished
+    actionLabel.style.opacity = 0;
+    actionTimer = 0;
+    currentAction = null;
+    return;
+  }
+  // If still performing the action, update relevant need
+  let ratio = dt / ACTION_DURATION * 100; // how many “points” to add (roughly)
+  switch(objType) {
+    case "bed":
+      energy = Math.min(100, energy + ratio);
+      break;
+    case "fridge":
+      hunger = Math.min(100, hunger + ratio);
+      break;
+    case "toilet":
+      bladder = Math.min(100, bladder + ratio);
+      break;
+    case "sink":
+      hygiene = Math.min(100, hygiene + ratio);
+      break;
+  }
+  actionLabel.textContent = "Using " + objType + "...";
+  actionLabel.style.opacity = 1;
+  actionLabel.style.left = (simX - 20) + "px";
+  actionLabel.style.top = (simY - 40) + "px";
+}
+
+/********************
+ * Needs Depletion
+ ********************/
+function depleteNeeds(dt) {
+  let decayRate = 2; // points per minute for each need? We'll do per second for simplicity
+  // The more we walk, the faster we lose energy
+  let movementMultiplier = isWalking ? 1.5 : 1.0;
+  energy -= decayRate * movementMultiplier * dt * 0.5;
+  hunger -= decayRate * 0.5 * dt;
+  bladder -= decayRate * 0.4 * dt;
+  hygiene -= decayRate * 0.3 * dt;
+
+  energy = Math.max(0, energy);
+  hunger = Math.max(0, hunger);
+  bladder = Math.max(0, bladder);
+  hygiene = Math.max(0, hygiene);
+}
+
+/********************
+ * Main Loop
+ ********************/
+let lastTime = performance.now();
+function gameLoop(timestamp) {
+  let dt = (timestamp - lastTime)/1000;
+  lastTime = timestamp;
+
+  // Update sim position
+  updateSimPosition(dt);
+  // If sim is close enough to target and currentAction is set, do action
+  if (!isWalking && currentAction) {
+    // Perform action
+    performAction(currentAction, dt);
+  } else {
+    actionLabel.style.opacity = 0;
+  }
+  // Deplete needs
+  depleteNeeds(dt);
+  // Update UI
+  updateNeedBars();
+
+  requestAnimationFrame(gameLoop);
+}
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

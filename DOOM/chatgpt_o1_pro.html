@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Minimal DOOM-like Raycaster</title>
+<style>
+/* ----------------------------- GLOBAL STYLES ----------------------------- */
+html, body {
+  margin: 0; padding: 0;
+  width: 100%; height: 100%;
+  background: #000;
+  overflow: hidden;
+  font-family: sans-serif;
+  color: #fff;
+}
+canvas {
+  display: block;
+  margin: 0 auto;
+  background-color: #000;
+}
+#overlay {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  color: #fff;
+  pointer-events: none;
+  text-align: center;
+  font-size: 14px;
+  text-shadow: 1px 1px 2px black;
+  font-family: monospace;
+  margin-top: 5px;
+}
+#overlay div {
+  margin: 5px 0;
+}
+.health-bar {
+  width: 300px;
+  height: 20px;
+  background: red;
+  border: 1px solid #fff;
+  margin: 0 auto;
+  position: relative;
+}
+.health-inner {
+  background: lime;
+  height: 100%;
+  width: 100%;
+}
+#status {
+  margin-top: 5px;
+}
+</style>
+</head>
+<body>
+
+<!--
+  We’ll embed a couple of tiny inline SVG shapes that we can use as “textures”.
+  These are extremely simple placeholders; real DOOM has far more elaborate art!
+-->
+<svg width="0" height="0" style="position:absolute">
+  <!-- Red brick pattern -->
+  <symbol id="texture-brick" viewBox="0 0 64 64" preserveAspectRatio="none">
+    <rect x="0" y="0" width="64" height="64" fill="brown"/>
+    <rect x="0" y="0" width="64" height="8" fill="#4f0000"/>
+    <rect x="0" y="16" width="64" height="8" fill="#4f0000"/>
+    <rect x="0" y="32" width="64" height="8" fill="#4f0000"/>
+    <rect x="0" y="48" width="64" height="8" fill="#4f0000"/>
+  </symbol>
+  <!-- Blue stone pattern -->
+  <symbol id="texture-stone" viewBox="0 0 64 64" preserveAspectRatio="none">
+    <rect x="0" y="0" width="64" height="64" fill="#223355"/>
+    <rect x="2" y="2" width="60" height="60" fill="#334466" stroke="#112244" stroke-width="2"/>
+  </symbol>
+  <!-- Enemy sprite (very crude: a pinkish "imp" face) -->
+  <symbol id="enemy-sprite" viewBox="0 0 64 64" preserveAspectRatio="none">
+    <rect x="0" y="0" width="64" height="64" fill="pink"/>
+    <circle cx="20" cy="20" r="5" fill="black"/>
+    <circle cx="44" cy="20" r="5" fill="black"/>
+    <path d="M15,35 Q32,50 49,35" fill="red"/>
+  </symbol>
+  <!-- Gun "hand" sprite (bottom overlay) -->
+  <symbol id="gun-sprite" viewBox="0 0 160 60" preserveAspectRatio="none">
+    <!-- Just a rectangle that will appear in the bottom center -->
+    <rect x="0" y="0" width="160" height="60" fill="#333"/>
+    <rect x="0" y="0" width="160" height="60" fill="url(#gun-pattern)"/>
+  </symbol>
+  <!-- We'll define a simple pattern for the gun - stripes -->
+  <pattern id="gun-pattern" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
+    <rect x="0" y="0" width="4" height="8" fill="#111"/>
+    <rect x="4" y="0" width="4" height="8" fill="#555"/>
+  </pattern>
+</svg>
+
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+
+<!-- Overlays for text, health, etc. -->
+<div id="overlay">
+  <div>Use WASD or Arrow Keys to Move/Turn. SPACE to Shoot.</div>
+  <div class="health-bar"><div class="health-inner" id="healthBar"></div></div>
+  <div id="status"></div>
+</div>
+
+<script>
+/*******************************************************************************
+ *  VERY BASIC "DOOM-LIKE" RAYCASTING ENGINE                                   *
+ ******************************************************************************/
+
+/* 
+  We’ll do a minimal map array. Each cell can be:
+  0 = empty space
+  1 = wall with the "brick" texture
+  2 = wall with the "stone" texture
+  3 = an enemy spawn location
+*/
+const MAP = [
+  [1,1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,3,0,0,0,0,0,1],
+  [1,0,0,0,0,2,0,0,3,0,1],
+  [1,0,0,0,0,0,0,0,0,0,1],
+  [1,0,2,2,2,2,2,2,2,0,1],
+  [1,0,2,0,0,0,0,0,2,0,1],
+  [1,0,2,0,0,0,3,0,2,0,1],
+  [1,0,2,2,2,2,2,2,2,0,1],
+  [1,0,0,0,0,0,0,0,0,0,1],
+  [1,0,3,0,2,0,0,0,0,0,1],
+  [1,1,1,1,1,1,1,1,1,1,1],
+];
+
+// Map settings
+const MAP_WIDTH  = MAP[0].length;
+const MAP_HEIGHT = MAP.length;
+const TILE_SIZE = 64; // size of each map cell in "world" units
+
+// Player info
+let playerX = 3.5 * TILE_SIZE;  // start somewhere in the middle
+let playerY = 3.5 * TILE_SIZE;
+let playerAngle = 0; // facing right (0 radians)
+const FOV = Math.PI / 3; // field of view (60 degrees)
+const SPEED = 2.5;       // movement speed
+const TURN_SPEED = 0.07; // turning speed
+
+// Raycasting
+const NUM_RAYS = 200; // how many vertical stripes we cast
+let wallStrips = [];  // will store info for each vertical strip
+
+// Enemies
+let enemies = [];
+const ENEMY_SIZE = 20;
+const ENEMY_SPEED = 0.5;
+const ENEMY_DAMAGE = 15;
+let nextEnemyId = 1;
+
+// Player stats
+let playerHealth = 100;
+let isShooting = false;
+let shootCooldown = 0;
+let kills = 0;
+
+// Precompute distances to reduce fisheye
+function fixFishEye(distance, angleDiff) {
+  return distance * Math.cos(angleDiff);
+}
+
+// Key states
+let keys = {};
+
+// Build an internal representation for walls and enemy spawns
+function initMap() {
+  for (let y = 0; y < MAP_HEIGHT; y++) {
+    for (let x = 0; x < MAP_WIDTH; x++) {
+      let cell = MAP[y][x];
+      if (cell === 3) {
+        // spawn an enemy at center of that cell
+        enemies.push({
+          id: nextEnemyId++,
+          x: (x + 0.5) * TILE_SIZE,
+          y: (y + 0.5) * TILE_SIZE,
+          dead: false,
+          health: 50
+        });
+        // set the cell to empty
+        MAP[y][x] = 0;
+      }
+    }
+  }
+}
+
+// Check collisions with walls
+function isWall(cx, cy) {
+  if (cx < 0 || cy < 0 || cx >= MAP_WIDTH || cy >= MAP_HEIGHT) return true;
+  return (MAP[cy][cx] !== 0);
+}
+
+function movePlayer() {
+  // forward/back
+  if (keys['w'] || keys['ArrowUp']) {
+    let nx = playerX + Math.cos(playerAngle) * SPEED;
+    let ny = playerY + Math.sin(playerAngle) * SPEED;
+    if (!isWall(Math.floor(nx / TILE_SIZE), Math.floor(ny / TILE_SIZE))) {
+      playerX = nx; playerY = ny;
+    }
+  }
+  if (keys['s'] || keys['ArrowDown']) {
+    let nx = playerX - Math.cos(playerAngle) * SPEED;
+    let ny = playerY - Math.sin(playerAngle) * SPEED;
+    if (!isWall(Math.floor(nx / TILE_SIZE), Math.floor(ny / TILE_SIZE))) {
+      playerX = nx; playerY = ny;
+    }
+  }
+  // left/right turn
+  if (keys['a']) {
+    playerAngle -= TURN_SPEED;
+  }
+  if (keys['d']) {
+    playerAngle += TURN_SPEED;
+  }
+  // arrow left/right turn
+  if (keys['ArrowLeft']) {
+    playerAngle -= TURN_SPEED;
+  }
+  if (keys['ArrowRight']) {
+    playerAngle += TURN_SPEED;
+  }
+}
+
+// Basic 2D distance
+function dist2d(x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+
+function updateEnemies() {
+  enemies.forEach(enemy => {
+    if (enemy.dead) return;
+    // Move enemy toward player
+    let angleToPlayer = Math.atan2(playerY - enemy.y, playerX - enemy.x);
+    let nx = enemy.x + Math.cos(angleToPlayer) * ENEMY_SPEED;
+    let ny = enemy.y + Math.sin(angleToPlayer) * ENEMY_SPEED;
+    // Check for walls
+    if (!isWall(Math.floor(nx / TILE_SIZE), Math.floor(ny / TILE_SIZE))) {
+      enemy.x = nx; enemy.y = ny;
+    }
+    // Check if the enemy is close enough to damage player
+    let d = dist2d(playerX, playerY, enemy.x, enemy.y);
+    if (d < ENEMY_SIZE) {
+      // damage player
+      playerHealth -= 0.1 * ENEMY_DAMAGE; // a bit slow damage per frame
+      if (playerHealth <= 0) {
+        playerHealth = 0;
+        // for fun, let's just keep going (no game over screen)
+      }
+    }
+  });
+}
+
+// Called when player shoots
+function shoot() {
+  // Ray in direction of player's facing
+  let shotRange = 300; // how far bullet travels
+  let closestEnemy = null;
+  let closestDist = Infinity;
+  enemies.forEach(enemy => {
+    if (enemy.dead) return;
+    // approximate if enemy is in front
+    let angleToEnemy = Math.atan2(enemy.y - playerY, enemy.x - playerX);
+    let angleDiff = angleToEnemy - playerAngle;
+    // normalize angle
+    angleDiff = (angleDiff + Math.PI*2) % (Math.PI*2);
+    if (angleDiff > Math.PI) {
+      angleDiff -= Math.PI*2;
+    }
+    // check if within a narrow field of ~10 degrees
+    if (Math.abs(angleDiff) < 0.17) {
+      // check distance
+      let d = dist2d(playerX, playerY, enemy.x, enemy.y);
+      if (d < shotRange && d < closestDist) {
+        closestDist = d;
+        closestEnemy = enemy;
+      }
+    }
+  });
+  if (closestEnemy) {
+    // "Hit" the enemy
+    closestEnemy.health -= 25;
+    if (closestEnemy.health <= 0) {
+      closestEnemy.dead = true;
+      kills++;
+    }
+  }
+}
+
+// Raycasting routine
+function castRays() {
+  wallStrips = [];
+  const startAngle = playerAngle - (FOV / 2);
+  const angleStep = FOV / NUM_RAYS;
+
+  for (let i = 0; i < NUM_RAYS; i++) {
+    let rayAngle = startAngle + i * angleStep;
+    // keep angle in [0..2PI)
+    rayAngle = (rayAngle + Math.PI*2) % (Math.PI*2);
+
+    // cast the ray, check horizontal & vertical collisions
+    let distanceToWall = 0;
+    let hitWall = false;
+    let textureHit = 1; // which texture we hit, default
+
+    // We can do a small DDA or incremental step approach:
+    const sin = Math.sin(rayAngle);
+    const cos = Math.cos(rayAngle);
+
+    let stepSize = 1.0; // how far we step in each iteration
+    let rayX = playerX;
+    let rayY = playerY;
+
+    while (!hitWall && distanceToWall < 2000) {
+      rayX += cos * stepSize;
+      rayY += sin * stepSize;
+      distanceToWall += stepSize;
+      // check if we hit a map cell that is a wall
+      let mapCheckX = Math.floor(rayX / TILE_SIZE);
+      let mapCheckY = Math.floor(rayY / TILE_SIZE);
+      if (mapCheckX < 0 || mapCheckY < 0 || 
+          mapCheckX >= MAP_WIDTH || mapCheckY >= MAP_HEIGHT) {
+        hitWall = true; 
+        distanceToWall = 2000; // break
+      } else if (MAP[mapCheckY][mapCheckX] !== 0) {
+        hitWall = true;
+        textureHit = MAP[mapCheckY][mapCheckX];
+      }
+    }
+
+    // Fix fish-eye
+    let diffAngle = rayAngle - playerAngle;
+    if (diffAngle < -Math.PI) diffAngle += 2*Math.PI;
+    if (diffAngle >  Math.PI) diffAngle -= 2*Math.PI;
+    distanceToWall = fixFishEye(distanceToWall, diffAngle);
+
+    wallStrips.push({
+      rayAngle: rayAngle,
+      distance: distanceToWall,
+      texture: textureHit
+    });
+  }
+}
+
+// Render the 3D scene onto the canvas
+function renderScene(ctx, width, height) {
+  ctx.clearRect(0, 0, width, height);
+
+  // Draw floor/ceiling
+  ctx.fillStyle = '#333';
+  ctx.fillRect(0, 0, width, height / 2); // ceiling
+  ctx.fillStyle = '#555';
+  ctx.fillRect(0, height / 2, width, height / 2); // floor
+
+  const stripWidth = width / NUM_RAYS;
+
+  for (let i = 0; i < NUM_RAYS; i++) {
+    let r = wallStrips[i];
+    let distance = r.distance;
+    let wallHeight = (TILE_SIZE * 277) / distance; // some constant factor
+    let top = (height / 2) - (wallHeight / 2);
+    if (top < 0) top = 0;
+    // choose texture fill
+    let textureId = (r.texture === 2) ? 'texture-stone' : 'texture-brick';
+    // create pattern
+    let patternCanvas = document.createElement('canvas');
+    patternCanvas.width = 64;
+    patternCanvas.height = 64;
+    let pctx = patternCanvas.getContext('2d');
+    // draw the inline SVG texture into the patternCanvas
+    let img = new Image();
+    // data URL referencing our inline SVG
+    img.src = 'data:image/svg+xml,' + encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+        <use xlink:href="#${textureId}" width="64" height="64"/>
+      </svg>`);
+    // wait for load - since we do this each frame, let's do a quick hack:
+    pctx.fillStyle = (r.texture === 2) ? '#223355' : 'brown';
+    pctx.fillRect(0, 0, 64, 64);
+    // we won't do an accurate offset for the X texture coordinate to keep it simpler
+
+    ctx.save();
+    // draw the column
+    ctx.fillStyle = ctx.createPattern(patternCanvas, 'repeat');
+    ctx.fillRect(i * stripWidth, top, stripWidth+1, wallHeight);
+    ctx.restore();
+  }
+
+  // Sort enemies by distance desc so we draw farther ones first
+  let enemiesSorted = [...enemies].sort((a,b) => {
+    let da = dist2d(playerX, playerY, a.x, a.y);
+    let db = dist2d(playerX, playerY, b.x, b.y);
+    return db - da; // descending
+  });
+
+  // Draw enemies as sprites
+  enemiesSorted.forEach(enemy => {
+    if (enemy.dead) return;
+    let angleToEnemy = Math.atan2(enemy.y - playerY, enemy.x - playerX) - playerAngle;
+    // normalize
+    angleToEnemy = (angleToEnemy + Math.PI*2) % (Math.PI*2);
+    if (angleToEnemy > Math.PI) angleToEnemy -= 2*Math.PI;
+    let distToEnemy = dist2d(playerX, playerY, enemy.x, enemy.y);
+    // if inside FOV
+    if (Math.abs(angleToEnemy) < FOV / 2 + 0.2) {
+      // fix fish-eye
+      distToEnemy = fixFishEye(distToEnemy, angleToEnemy);
+      let enemyHeight = (TILE_SIZE * 300) / distToEnemy;
+      let enemyWidth = enemyHeight;
+      let center = (width / 2) - (enemyWidth / 2);
+      // the angle portion that’s relevant for positioning
+      let anglePercent = (angleToEnemy / (FOV / 2));
+      let screenX = center + (center * anglePercent * -1);
+      let top = (height / 2) - enemyHeight / 2;
+
+      // We'll draw an inline sprite
+      let patternCanvas = document.createElement('canvas');
+      patternCanvas.width = 64;
+      patternCanvas.height = 64;
+      let pctx = patternCanvas.getContext('2d');
+      // For speed, just fill it pink
+      pctx.fillStyle = 'pink';
+      pctx.fillRect(0, 0, 64, 64);
+
+      ctx.save();
+      ctx.fillStyle = ctx.createPattern(patternCanvas, 'repeat');
+      ctx.fillRect(screenX, top, enemyWidth, enemyHeight);
+      ctx.restore();
+
+      // Or let's try to draw the real inline SVG for the enemy:
+      // We'll do a quick hack: create an image with data-URL again
+      // But be mindful we do this every frame. In a real game we'd cache.
+      /*
+      let img = new Image();
+      img.src = 'data:image/svg+xml,' + encodeURIComponent(`
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+          <use xlink:href="#enemy-sprite" width="64" height="64"/>
+        </svg>
+      `);
+      ctx.drawImage(img, screenX, top, enemyWidth, enemyHeight);
+      */
+    }
+  });
+
+  // Draw "gun" at the bottom center
+  let gunWidth = 160; let gunHeight = 60;
+  let gunX = (width - gunWidth) / 2;
+  let gunY = height - gunHeight;
+  // if shooting, maybe shift it a bit
+  if (isShooting) {
+    gunY += 5;
+  }
+  // fill the gun area
+  let gunPatternCanvas = document.createElement('canvas');
+  gunPatternCanvas.width = 160;
+  gunPatternCanvas.height = 60;
+  let gpctx = gunPatternCanvas.getContext('2d');
+  gpctx.fillStyle = '#333';
+  gpctx.fillRect(0, 0, 160, 60);
+  ctx.drawImage(gunPatternCanvas, gunX, gunY, gunWidth, gunHeight);
+}
+
+// Update UI overlay
+function updateUI() {
+  let hb = document.getElementById('healthBar');
+  hb.style.width = Math.max(0, Math.min(100, playerHealth)) + '%';
+  document.getElementById('status').textContent = 
+    'Health: ' + Math.floor(playerHealth) + '   |   Kills: ' + kills;
+}
+
+/*******************************************************************************
+ *  MAIN LOOP                                                                  *
+ ******************************************************************************/
+
+function gameLoop() {
+  movePlayer();
+  updateEnemies();
+
+  // handle shooting cooldown
+  if (shootCooldown > 0) {
+    shootCooldown--;
+    if (shootCooldown === 0) {
+      isShooting = false;
+    }
+  }
+
+  // cast rays
+  castRays();
+  // draw
+  let canvas = document.getElementById('gameCanvas');
+  let ctx = canvas.getContext('2d');
+  renderScene(ctx, canvas.width, canvas.height);
+
+  // UI
+  updateUI();
+
+  requestAnimationFrame(gameLoop);
+}
+
+// Event handlers
+window.addEventListener('keydown', (e) => {
+  keys[e.key] = true;
+  // Also handle shooting
+  if (e.key === ' ' && shootCooldown === 0) {
+    isShooting = true;
+    shootCooldown = 20; // frames
+    shoot();
+    e.preventDefault();
+  }
+});
+window.addEventListener('keyup', (e) => {
+  keys[e.key] = false;
+});
+
+// Initialization
+initMap();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

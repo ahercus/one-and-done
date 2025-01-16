@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mini Sims</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #87CEEB;
+      font-family: Arial, sans-serif;
+    }
+    canvas {
+      display: block;
+    }
+    #ui {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.9);
+      padding: 10px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    }
+    .status-bar {
+      width: 100px;
+      height: 10px;
+      background: #ddd;
+      border-radius: 5px;
+      margin: 5px 0;
+    }
+    .status-bar-inner {
+      height: 100%;
+      background: #4CAF50;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<div id="ui">
+  <p>Hunger</p>
+  <div class="status-bar" id="hunger-bar">
+    <div class="status-bar-inner" id="hunger-bar-inner"></div>
+  </div>
+  <p>Energy</p>
+  <div class="status-bar" id="energy-bar">
+    <div class="status-bar-inner" id="energy-bar-inner"></div>
+  </div>
+</div>
+<script>
+  const canvas = document.getElementById("gameCanvas");
+  const ctx = canvas.getContext("2d");
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  // Game variables
+  const sim = {
+    x: canvas.width / 2,
+    y: canvas.height / 2,
+    size: 20,
+    color: "white",
+    speed: 2,
+    hunger: 100,
+    energy: 100,
+  };
+
+  const food = {
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    size: 15,
+    color: "green",
+  };
+
+  const bed = {
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    width: 60,
+    height: 30,
+    color: "brown",
+  };
+
+  let keys = {};
+
+  // Event listeners
+  window.addEventListener("keydown", (e) => keys[e.key] = true);
+  window.addEventListener("keyup", (e) => keys[e.key] = false);
+
+  function drawSim() {
+    ctx.fillStyle = sim.color;
+    ctx.beginPath();
+    ctx.arc(sim.x, sim.y, sim.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawFood() {
+    ctx.fillStyle = food.color;
+    ctx.beginPath();
+    ctx.arc(food.x, food.y, food.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawBed() {
+    ctx.fillStyle = bed.color;
+    ctx.fillRect(bed.x, bed.y, bed.width, bed.height);
+  }
+
+  function updateSim() {
+    if (keys["ArrowUp"]) sim.y -= sim.speed;
+    if (keys["ArrowDown"]) sim.y += sim.speed;
+    if (keys["ArrowLeft"]) sim.x -= sim.speed;
+    if (keys["ArrowRight"]) sim.x += sim.speed;
+
+    // Boundaries
+    sim.x = Math.max(sim.size, Math.min(canvas.width - sim.size, sim.x));
+    sim.y = Math.max(sim.size, Math.min(canvas.height - sim.size, sim.y));
+
+    // Hunger and Energy decay
+    sim.hunger -= 0.05;
+    sim.energy -= 0.03;
+
+    if (sim.hunger <= 0 || sim.energy <= 0) {
+      alert("Game Over! Your Sim has perished.");
+      document.location.reload();
+    }
+  }
+
+  function checkInteractions() {
+    // Eating
+    const foodDist = Math.sqrt((sim.x - food.x) ** 2 + (sim.y - food.y) ** 2);
+    if (foodDist < sim.size + food.size) {
+      sim.hunger = Math.min(100, sim.hunger + 30);
+      food.x = Math.random() * canvas.width;
+      food.y = Math.random() * canvas.height;
+    }
+
+    // Sleeping
+    if (
+      sim.x > bed.x && sim.x < bed.x + bed.width &&
+      sim.y > bed.y && sim.y < bed.y + bed.height
+    ) {
+      sim.energy = Math.min(100, sim.energy + 0.5);
+    }
+  }
+
+  function updateUI() {
+    const hungerBarInner = document.getElementById("hunger-bar-inner");
+    const energyBarInner = document.getElementById("energy-bar-inner");
+
+    hungerBarInner.style.width = `${sim.hunger}%`;
+    energyBarInner.style.width = `${sim.energy}%`;
+
+    if (sim.hunger < 30) hungerBarInner.style.background = "red";
+    else hungerBarInner.style.background = "#4CAF50";
+
+    if (sim.energy < 30) energyBarInner.style.background = "red";
+    else energyBarInner.style.background = "#4CAF50";
+  }
+
+  function gameLoop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    updateSim();
+    checkInteractions();
+    updateUI();
+
+    drawFood();
+    drawBed();
+    drawSim();
+
+    requestAnimationFrame(gameLoop);
+  }
+
+  gameLoop();
+</script>
+</body>
+</html>

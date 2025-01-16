@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Snake Game</title>
+  <style>
+    body {
+      text-align: center;
+      font-family: Arial, sans-serif;
+    }
+    #gameBoard {
+      border: 2px solid black;
+    }
+  </style>
+</head>
+<body>
+  <h1>Snake Game</h1>
+  <canvas id="gameBoard" width="400" height="400"></canvas>
+
+  <script>
+    const gameBoard = document.getElementById('gameBoard');
+    const ctx = gameBoard.getContext('2d');
+    
+    // Game settings
+    const tileSize = 10;
+    const totalRows = gameBoard.height / tileSize;
+    const totalCols = gameBoard.width / tileSize; 
+    const frameRate = 100; // in ms
+    
+    // Game state
+    let snake = [{x: 5, y: 5}];
+    let food = {};
+    let dx = 0; 
+    let dy = 0;
+    let gameOver = false;
+    
+    function main() {
+      if (!gameOver) {
+        setTimeout(() => {
+          clearBoard();
+          moveSnake();
+          drawFood();
+          drawSnake();
+          checkGameOver();
+          main();
+        }, frameRate);
+      } else {
+        displayGameOver();
+      }
+    }
+    
+    function clearBoard() {
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, gameBoard.width, gameBoard.height);
+    }
+    
+    function drawSnakePart(snakePart) {
+      ctx.fillStyle = 'lightgreen';
+      ctx.strokeStyle = 'darkgreen';
+      ctx.fillRect(snakePart.x * tileSize, snakePart.y * tileSize, tileSize, tileSize);
+      ctx.strokeRect(snakePart.x * tileSize, snakePart.y * tileSize, tileSize, tileSize);
+    }
+
+    function drawSnake() {
+      snake.forEach(drawSnakePart);
+    }
+    
+    function moveSnake() {
+      const head = {x: snake[0].x + dx, y: snake[0].y + dy};
+      snake.unshift(head);
+      
+      const hasEatenFood = snake[0].x === food.x && snake[0].y === food.y;
+      if (hasEatenFood) {
+        generateFood();
+      } else {
+        snake.pop();
+      }
+    }
+
+    function generateFood() {
+      food.x = Math.floor(Math.random() * totalCols);
+      food.y = Math.floor(Math.random() * totalRows);
+    }
+
+    function drawFood() {
+      ctx.fillStyle = 'red'; 
+      ctx.strokeStyle = 'darkred';
+      ctx.fillRect(food.x * tileSize, food.y * tileSize, tileSize, tileSize);
+      ctx.strokeRect(food.x * tileSize, food.y * tileSize, tileSize, tileSize);
+    }
+    
+    function checkGameOver() {
+      // Check wall collisions  
+      const hitLeftWall = snake[0].x < 0;
+      const hitRightWall = snake[0].x > totalCols - 1;
+      const hitTopWall = snake[0].y < 0;
+      const hitBottomWall = snake[0].y > totalRows - 1;
+      
+      // Check snake collisions
+      const snakeHead = snake[0];
+      const snakeBody = snake.slice(1);
+      const hitSelf = snakeBody.some(part => part.x === snakeHead.x && part.y === snakeHead.y);
+      
+      gameOver = hitLeftWall || hitRightWall || hitTopWall || hitBottomWall || hitSelf;  
+    }
+    
+    function displayGameOver() {
+      ctx.font = '48px Arial';
+      ctx.fillStyle = 'black';
+      ctx.textAlign = 'center';
+      ctx.fillText('GAME OVER!', gameBoard.width / 2, gameBoard.height / 2);
+    }
+    
+    document.addEventListener('keydown', changeDirection);
+    
+    function changeDirection(event) {
+      const LEFT_KEY = 37;
+      const RIGHT_KEY = 39;
+      const UP_KEY = 38;
+      const DOWN_KEY = 40;
+
+      const keyPressed = event.keyCode;
+      
+      if (keyPressed === LEFT_KEY && dx !== 1) {
+        dx = -1;
+        dy = 0;  
+      }
+
+      if (keyPressed === UP_KEY && dy !== 1) {
+        dx = 0;
+        dy = -1;
+      }
+
+      if (keyPressed === RIGHT_KEY && dx !== -1) {
+        dx = 1;
+        dy = 0;
+      }
+
+      if (keyPressed === DOWN_KEY && dy !== -1) {
+        dx = 0;
+        dy = 1;
+      }
+    }
+
+    generateFood();
+    main();
+  </script>
+</body>
+</html>

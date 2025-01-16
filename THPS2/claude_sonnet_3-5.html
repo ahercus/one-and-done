@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Browser THPS</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #333;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #game-container {
+            width: 800px;
+            height: 600px;
+            position: relative;
+            margin: 20px auto;
+            background: #87CEEB;
+            border: 4px solid #000;
+            overflow: hidden;
+        }
+        #skater {
+            position: absolute;
+            width: 40px;
+            height: 80px;
+            transform-origin: center bottom;
+        }
+        .ramp {
+            position: absolute;
+            background: #666;
+            border: 2px solid #333;
+        }
+        .rail {
+            position: absolute;
+            height: 5px;
+            background: #999;
+            border: 1px solid #666;
+        }
+        #score-display {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 2px black;
+        }
+        #trick-display {
+            position: absolute;
+            top: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #FFD700;
+            font-size: 28px;
+            font-weight: bold;
+            text-shadow: 2px 2px 2px black;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        #combo-display {
+            position: absolute;
+            top: 90px;
+            left: 10px;
+            color: #FF4444;
+            font-size: 20px;
+            font-weight: bold;
+            text-shadow: 2px 2px 2px black;
+        }
+        #special-meter {
+            position: absolute;
+            top: 120px;
+            left: 10px;
+            width: 100px;
+            height: 10px;
+            background: #333;
+            border: 1px solid #666;
+        }
+        #special-fill {
+            width: 0%;
+            height: 100%;
+            background: #FFD700;
+            transition: width 0.3s;
+        }
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            font-size: 14px;
+            text-shadow: 1px 1px 1px black;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="skater"></div>
+        <div id="score-display">Score: 0</div>
+        <div id="trick-display"></div>
+        <div id="combo-display">Combo: x1</div>
+        <div id="special-meter"><div id="special-fill"></div></div>
+        <div id="controls">
+            Arrow Keys: Move | Space: Ollie | Z: Kickflip | X: 360 Flip
+            <br>C: Grind | V: Manual | B: Special
+        </div>
+    </div>
+
+    <script>
+        // Game state
+        const gameState = {
+            position: { x: 100, y: 400 },
+            velocity: { x: 0, y: 0 },
+            rotation: 0,
+            rotationVelocity: 0,
+            onGround: false,
+            grinding: false,
+            manualing: false,
+            score: 0,
+            combo: 1,
+            specialMeter: 0,
+            lastTrick: '',
+            trickHistory: []
+        };
+
+        // Physics constants
+        const GRAVITY = 0.5;
+        const MOVE_SPEED = 0.5;
+        const JUMP_FORCE = 12;
+        const FRICTION = 0.98;
+        const AIR_RESISTANCE = 0.995;
+
+        // Skater SVG
+        const skaterSvg = `
+            <svg viewBox="0 0 40 80">
+                <rect x="15" y="10" width="10" height="20" fill="#FF0000"/> <!-- Torso -->
+                <circle cx="20" cy="5" r="5" fill="#FFE4C4"/> <!-- Head -->
+                <rect x="5" y="30" width="30" height="5" fill="#333"/> <!-- Skateboard -->
+                <circle cx="8" cy="35" r="2" fill="#666"/> <!-- Wheel -->
+                <circle cx="32" cy="35" r="2" fill="#666"/> <!-- Wheel -->
+                <rect x="15" y="30" width="3" height="15" fill="#0000FF"/> <!-- Leg -->
+                <rect x="22" y="30" width="3" height="15" fill="#0000FF"/> <!-- Leg -->
+                <rect x="10" y="15" width="3" height="10" fill="#FF0000"/> <!-- Arm -->
+                <rect x="27" y="15" width="3" height="10" fill="#FF0000"/> <!-- Arm -->
+            </svg>
+        `;
+
+        // Level design
+        const obstacles = [
+            { type: 'ramp', x: 200, y: 500, width: 100, height: 100, angle: 45 },
+            { type: 'ramp', x: 500, y: 500, width: 100, height: 100, angle: -45 },
+            { type: 'rail', x: 300, y: 450, width: 200, height: 5 },
+            { type: 'platform', x: 600, y: 300, width: 200, height: 20 }
+        ];
+
+        // Initialize game
+        function initGame() {
+            const skater = document.getElementById('skater');
+            skater.innerHTML = skaterSvg;
+            
+            // Create obstacles
+            obstacles.forEach(obstacle => {
+                const element = document.createElement('div');
+                element.className = obstacle.type;
+                element.style.left = obstacle.x + 'px';
+                element.style.top = obstacle.y + 'px';
+                element.style.width = obstacle.width + 'px';
+                element.style.height = obstacle.height + 'px';
+                
+                if (obstacle.angle) {
+                    element.style.transform = `rotate(${obstacle.angle}deg)`;
+                }
+                
+                document.getElementById('game-container').appendChild(element);
+            });
+
+            setupControls();
+            gameLoop();
+        }
+
+        // Controls
+        function setupControls() {
+            const keys = new Set();
+            
+            document.addEventListener('keydown', e => {
+                keys.add(e.key);
+                handleInput(e.key, true);
+            });
+            
+            document.addEventListener('keyup', e => {
+                keys.delete(e.key);
+                handleInput(e.key, false);
+            });
+
+            function handleInput(key, pressed) {
+                if (!pressed) return;
+
+                switch(key) {
+                    case ' ':
+                        if (gameState.onGround) {
+                            jump();
+                        }
+                        break;
+                    case 'z':
+                        if (!gameState.onGround) {
+                            performTrick('Kickflip', 500);
+                        }
+                        break;
+                    case 'x':
+                        if (!gameState.onGround) {
+                            performTrick('360 Flip', 750);
+                        }
+                        break;
+                    case 'c':
+                        if (nearRail() && !gameState.grinding) {
+                            startGrind();
+                        }
+                        break;
+                    case 'v':
+                        if (gameState.onGround && !gameState.manualing) {
+                            startManual();
+                        }
+                        break;
+                    case 'b':
+                        if (gameState.specialMeter >= 100) {
+                            performSpecial();
+                        }
+                        break;
+                }
+            }
+
+            // Movement update function
+            function updateMovement() {
+                if (keys.has('ArrowLeft')) {
+                    gameState.velocity.x -= MOVE_SPEED;
+                }
+                if (keys.has('ArrowRight')) {
+                    gameState.velocity.x += MOVE_SPEED;
+                }
+            }
+
+            return updateMovement;
+        }
+
+        // Core gameplay functions
+        function jump() {
+            gameState.velocity.y = -JUMP_FORCE;
+            gameState.onGround = false;
+            gameState.manualing = false;
+            addScore(100, 'Ollie');
+        }
+
+        function performTrick(trickName, points) {
+            if (gameState.trickHistory.includes(trickName)) {
+                points = Math.floor(points * 0.5);
+            }
+            
+            gameState.rotationVelocity = (Math.random() > 0.5 ? 10 : -10);
+            addScore(points, trickName);
+            gameState.trickHistory.push(trickName);
+            
+            // Reset trick history when landing
+            if (gameState.onGround) {
+                gameState.trickHistory = [];
+            }
+        }
+
+        function startGrind() {
+            gameState.grinding = true;
+            gameState.velocity.y = 0;
+            addScore(250, 'Grind');
+            
+            // Auto-align to rail
+            const rail = getNearestRail();
+            if (rail) {
+                gameState.position.y = rail.y - 30;
+            }
+        }
+
+        function startManual() {
+            gameState.manualing = true;
+            addScore(150, 'Manual');
+        }
+
+        function performSpecial() {
+            gameState.specialMeter = 0;
+            updateSpecialMeter();
+            gameState.rotationVelocity = 20;
+            addScore(2000, '900 Spin');
+        }
+
+        function addScore(points, trickName) {
+            const finalPoints = points * gameState.combo;
+            gameState.score += finalPoints;
+            gameState.combo++;
+            gameState.specialMeter = Math.min(100, gameState.specialMeter + 10);
+            
+            updateScoreDisplay();
+            updateComboDisplay();
+            updateSpecialMeter();
+            showTrickName(trickName);
+        }
+
+        // UI updates
+        function updateScoreDisplay() {
+            document.getElementById('score-display').textContent = `Score: ${gameState.score}`;
+        }
+
+        function updateComboDisplay() {
+            document.getElementById('combo-display').textContent = `Combo: x${gameState.combo}`;
+        }
+
+        function updateSpecialMeter() {
+            document.getElementById('special-fill').style.width = gameState.specialMeter + '%';
+        }
+
+        function showTrickName(trickName) {
+            const display = document.getElementById('trick-display');
+            display.textContent = trickName;
+            display.style.opacity = '1';
+            
+            setTimeout(() => {
+                display.style.opacity = '0';
+            }, 1000);
+        }
+
+        // Physics and collision
+        function updatePhysics() {
+            if (!gameState.grinding) {
+                gameState.velocity.y += GRAVITY;
+            }
+
+            gameState.velocity.x *= gameState.onGround ? FRICTION : AIR_RESISTANCE;
+            gameState.velocity.y *= AIR_RESISTANCE;
+            
+            gameState.position.x += gameState.velocity.x;
+            gameState.position.y += gameState.velocity.y;
+            
+            // Rotation physics
+            gameState.rotation += gameState.rotationVelocity;
+            gameState.rotationVelocity *= 0.95;
+
+            // Ground collision
+            if (gameState.position.y > 500) {
+                land();
+            }
+
+            // World boundaries
+            gameState.position.x = Math.max(0, Math.min(gameState.position.x, 760));
+            
+            // Check rail collisions
+            if (gameState.grinding && !nearRail()) {
+                gameState.grinding = false;
+            }
+
+            // Update skater element
+            const skater = document.getElementById('skater');
+            skater.style.left = gameState.position.x + 'px';
+            skater.style.top = gameState.position.y + 'px';
+            skater.style.transform = `rotate(${gameState.rotation}deg)`;
+        }
+
+        function land() {
+            gameState.position.y = 500;
+            gameState.velocity.y = 0;
+            gameState.onGround = true;
+            gameState.rotation = 0;
+            gameState.rotationVelocity = 0;
+
+            if (Math.abs(gameState.rotation) > 360) {
+                addScore(500, 'Perfect Landing');
+            }
+
+            if (!gameState.manualing) {
+                gameState.combo = 1;
+                updateComboDisplay();
+            }
+        }
+
+        function nearRail() {
+            const rail = getNearestRail();
+            if (!rail) return false;
+            
+            const distance = Math.hypot(
+                gameState.position.x - rail.x,
+                gameState.position.y - rail.y
+            );
+            
+            return distance < 30;
+        }
+
+        function getNearestRail() {
+            return obstacles.find(o => o.type === 'rail');
+        }
+
+        // Game loop
+        function gameLoop() {
+            updatePhysics();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start game
+        window.onload = initGame;
+    </script>
+</body>
+</html>

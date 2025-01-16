@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Texas Hold'em Poker Mini</title>
+  <style>
+    body {
+      margin: 0;
+      background: #006400;
+      font-family: Arial, sans-serif;
+      color: white;
+    }
+    #gameTable {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+    .player, .dealer {
+      margin: 10px;
+      padding: 10px;
+      background: #222;
+      border-radius: 10px;
+      text-align: center;
+    }
+    .card {
+      display: inline-block;
+      margin: 5px;
+      width: 50px;
+      height: 70px;
+      background: #fff;
+      color: black;
+      border: 1px solid #000;
+      border-radius: 5px;
+      text-align: center;
+      font-size: 1.2em;
+      font-weight: bold;
+      line-height: 70px;
+    }
+    #controls {
+      margin-top: 20px;
+      text-align: center;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      font-size: 1em;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      background: #228B22;
+      color: white;
+    }
+    button:hover {
+      background: #32CD32;
+    }
+  </style>
+</head>
+<body>
+  <div id="gameTable">
+    <div id="dealer" class="dealer">
+      <h3>Dealer's Hand</h3>
+      <div id="dealerCards"></div>
+    </div>
+    <div id="community" class="community">
+      <h3>Community Cards</h3>
+      <div id="communityCards"></div>
+    </div>
+    <div id="player" class="player">
+      <h3>Your Hand</h3>
+      <div id="playerCards"></div>
+    </div>
+    <div id="controls">
+      <button id="dealButton">Deal Cards</button>
+      <button id="resetButton">Reset</button>
+    </div>
+  </div>
+<script>
+  const suits = ['♠', '♥', '♦', '♣'];
+  const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+  let deck = [];
+
+  function createDeck() {
+    deck = [];
+    suits.forEach(suit => {
+      ranks.forEach(rank => {
+        deck.push({ suit, rank });
+      });
+    });
+  }
+
+  function shuffleDeck() {
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+  }
+
+  function dealCards() {
+    const dealerCards = document.getElementById('dealerCards');
+    const playerCards = document.getElementById('playerCards');
+    const communityCards = document.getElementById('communityCards');
+
+    dealerCards.innerHTML = '';
+    playerCards.innerHTML = '';
+    communityCards.innerHTML = '';
+
+    // Deal dealer's hand
+    const dealerHand = [deck.pop(), deck.pop()];
+    dealerHand.forEach(card => {
+      const cardDiv = document.createElement('div');
+      cardDiv.className = 'card';
+      cardDiv.textContent = `${card.rank}${card.suit}`;
+      dealerCards.appendChild(cardDiv);
+    });
+
+    // Deal player's hand
+    const playerHand = [deck.pop(), deck.pop()];
+    playerHand.forEach(card => {
+      const cardDiv = document.createElement('div');
+      cardDiv.className = 'card';
+      cardDiv.textContent = `${card.rank}${card.suit}`;
+      playerCards.appendChild(cardDiv);
+    });
+
+    // Deal community cards
+    const communityHand = [deck.pop(), deck.pop(), deck.pop(), deck.pop(), deck.pop()];
+    communityHand.forEach(card => {
+      const cardDiv = document.createElement('div');
+      cardDiv.className = 'card';
+      cardDiv.textContent = `${card.rank}${card.suit}`;
+      communityCards.appendChild(cardDiv);
+    });
+  }
+
+  document.getElementById('dealButton').addEventListener('click', () => {
+    createDeck();
+    shuffleDeck();
+    dealCards();
+  });
+
+  document.getElementById('resetButton').addEventListener('click', () => {
+    document.getElementById('dealerCards').innerHTML = '';
+    document.getElementById('playerCards').innerHTML = '';
+    document.getElementById('communityCards').innerHTML = '';
+  });
+</script>
+</body>
+</html>

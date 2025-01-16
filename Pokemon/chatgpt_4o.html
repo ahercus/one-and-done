@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pokemon Mini Game</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #2a9df4;
+      font-family: Arial, sans-serif;
+    }
+    canvas {
+      display: block;
+    }
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.8);
+      padding: 10px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    }
+    #ui p {
+      margin: 5px 0;
+    }
+  </style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<div id="ui">
+  <p>Press Arrow Keys to Move</p>
+  <p>Catch the Wild Pokemon!</p>
+</div>
+<script>
+  const canvas = document.getElementById("gameCanvas");
+  const ctx = canvas.getContext("2d");
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  // Game variables
+  const player = {
+    x: canvas.width / 2,
+    y: canvas.height / 2,
+    size: 20,
+    color: "yellow",
+    speed: 4
+  };
+
+  const pokemon = {
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    size: 20,
+    color: "red"
+  };
+
+  let score = 0;
+  let keys = {};
+
+  // Event listeners
+  window.addEventListener("keydown", (e) => keys[e.key] = true);
+  window.addEventListener("keyup", (e) => keys[e.key] = false);
+
+  function drawPlayer() {
+    ctx.fillStyle = player.color;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawPokemon() {
+    ctx.fillStyle = pokemon.color;
+    ctx.beginPath();
+    ctx.arc(pokemon.x, pokemon.y, pokemon.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function movePlayer() {
+    if (keys["ArrowUp"] && player.y - player.size > 0) player.y -= player.speed;
+    if (keys["ArrowDown"] && player.y + player.size < canvas.height) player.y += player.speed;
+    if (keys["ArrowLeft"] && player.x - player.size > 0) player.x -= player.speed;
+    if (keys["ArrowRight"] && player.x + player.size < canvas.width) player.x += player.speed;
+  }
+
+  function checkCollision() {
+    const dx = player.x - pokemon.x;
+    const dy = player.y - pokemon.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance < player.size + pokemon.size) {
+      score++;
+      pokemon.x = Math.random() * canvas.width;
+      pokemon.y = Math.random() * canvas.height;
+      alert("You caught a Pokemon! Total score: " + score);
+    }
+  }
+
+  function gameLoop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    movePlayer();
+    checkCollision();
+
+    drawPlayer();
+    drawPokemon();
+
+    requestAnimationFrame(gameLoop);
+  }
+
+  gameLoop();
+</script>
+</body>
+</html>
+

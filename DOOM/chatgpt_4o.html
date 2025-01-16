@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mini DOOM</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: black;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<script>
+  const canvas = document.getElementById("gameCanvas");
+  const ctx = canvas.getContext("2d");
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  // Game variables
+  const player = {
+    x: canvas.width / 2,
+    y: canvas.height / 2,
+    angle: 0,
+    speed: 3,
+    size: 10,
+    color: "white"
+  };
+
+  const bullets = [];
+  const enemies = Array.from({ length: 5 }, () => ({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    size: 20,
+    color: "red",
+    speed: 1
+  }));
+
+  let keys = {};
+
+  // Event listeners
+  window.addEventListener("keydown", (e) => keys[e.key] = true);
+  window.addEventListener("keyup", (e) => keys[e.key] = false);
+
+  canvas.addEventListener("click", () => {
+    bullets.push({
+      x: player.x,
+      y: player.y,
+      angle: player.angle,
+      speed: 5,
+      size: 5
+    });
+  });
+
+  function drawPlayer() {
+    ctx.fillStyle = player.color;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawEnemies() {
+    enemies.forEach(enemy => {
+      ctx.fillStyle = enemy.color;
+      ctx.beginPath();
+      ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  function drawBullets() {
+    bullets.forEach(bullet => {
+      ctx.fillStyle = "yellow";
+      ctx.beginPath();
+      ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  function updatePlayer() {
+    if (keys["ArrowUp"]) {
+      player.x += Math.cos(player.angle) * player.speed;
+      player.y += Math.sin(player.angle) * player.speed;
+    }
+    if (keys["ArrowDown"]) {
+      player.x -= Math.cos(player.angle) * player.speed;
+      player.y -= Math.sin(player.angle) * player.speed;
+    }
+    if (keys["ArrowLeft"]) player.angle -= 0.1;
+    if (keys["ArrowRight"]) player.angle += 0.1;
+  }
+
+  function updateBullets() {
+    bullets.forEach((bullet, index) => {
+      bullet.x += Math.cos(bullet.angle) * bullet.speed;
+      bullet.y += Math.sin(bullet.angle) * bullet.speed;
+      if (
+        bullet.x < 0 || bullet.x > canvas.width ||
+        bullet.y < 0 || bullet.y > canvas.height
+      ) {
+        bullets.splice(index, 1);
+      }
+    });
+  }
+
+  function updateEnemies() {
+    enemies.forEach((enemy, enemyIndex) => {
+      const dx = player.x - enemy.x;
+      const dy = player.y - enemy.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < enemy.size + player.size) {
+        alert("Game Over!");
+        document.location.reload();
+      }
+
+      enemy.x += (dx / dist) * enemy.speed;
+      enemy.y += (dy / dist) * enemy.speed;
+
+      bullets.forEach((bullet, bulletIndex) => {
+        const bdx = bullet.x - enemy.x;
+        const bdy = bullet.y - enemy.y;
+        const bdist = Math.sqrt(bdx * bdx + bdy * bdy);
+
+        if (bdist < enemy.size + bullet.size) {
+          enemies.splice(enemyIndex, 1);
+          bullets.splice(bulletIndex, 1);
+        }
+      });
+    });
+  }
+
+  function gameLoop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    updatePlayer();
+    updateBullets();
+    updateEnemies();
+
+    drawPlayer();
+    drawEnemies();
+    drawBullets();
+
+    requestAnimationFrame(gameLoop);
+  }
+
+  gameLoop();
+</script>
+</body>
+</html>

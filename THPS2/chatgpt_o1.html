@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Tony Hawk's Pro Skater 2 (Minimal 2D Tribute)</title>
+<style>
+  /* 
+    Tony Hawk's Pro Skater 2 (Minimal 2D Tribute)
+    All in one HTML/CSS/JS file, no external dependencies.
+    Very simplified physics, half-pipe skating, and basic trick system.
+  */
+
+  html, body {
+    margin: 0; 
+    padding: 0;
+    background: #222;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    font-family: sans-serif;
+    user-select: none;
+    color: #fff;
+  }
+
+  #gameContainer {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background: linear-gradient(#87CEEB, #228B22); /* sky to ground */
+    overflow: hidden;
+  }
+
+  canvas {
+    position: absolute;
+    top: 0; 
+    left: 0;
+  }
+
+  /* UI Overlays */
+  #scoreContainer {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: rgba(0,0,0,0.4);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 18px;
+    color: #ff0;
+    min-width: 100px;
+    z-index: 2;
+  }
+
+  #timeContainer {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: rgba(0,0,0,0.4);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 18px;
+    color: #ff0;
+    z-index: 2;
+  }
+
+  /* Game Over overlay */
+  #gameOverOverlay {
+    display: none;
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.8);
+    z-index: 3;
+    color: #fff;
+    text-align: center;
+    padding-top: 200px;
+    font-size: 36px;
+  }
+
+  #restartBtn {
+    background: #333;
+    color: #fff;
+    border: 2px solid #fff;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 24px;
+    margin-top: 24px;
+  }
+  #restartBtn:hover {
+    background: #555;
+  }
+
+  /* Minimal "Skater" sprite as an inline SVG drawn in code (we'll place it off-canvas).
+     We'll draw it in code onto the canvas at runtime, but keep an SVG element for reference. */
+  #hiddenSprites {
+    display: none; 
+  }
+</style>
+</head>
+<body>
+<div id="gameContainer">
+  <canvas id="gameCanvas"></canvas>
+  
+  <!-- Overlays -->
+  <div id="scoreContainer">Score: <span id="scoreValue">0</span></div>
+  <div id="timeContainer">Time: <span id="timeValue">120</span>s</div>
+  
+  <!-- Game Over screen -->
+  <div id="gameOverOverlay">
+    <div id="gameOverText">TIME'S UP!</div>
+    <div>Your final score: <span id="finalScore">0</span></div>
+    <button id="restartBtn">Restart</button>
+  </div>
+
+  <!-- Hidden inline SVG for skater reference (we'll copy these paths in code) -->
+  <svg id="hiddenSprites" viewBox="0 0 64 64">
+    <!-- Minimal skateboarder silhouette with a board -->
+    <g id="skater">
+      <!-- Board -->
+      <rect x="20" y="50" width="24" height="4" fill="#654321"/>
+      <!-- Body -->
+      <circle cx="32" cy="32" r="12" fill="#FFDAB9"/>  <!-- torso circle -->
+      <!-- Head -->
+      <circle cx="32" cy="16" r="6" fill="#FFE4C4"/>
+      <!-- Arms -->
+      <line x1="24" y1="26" x2="16" y2="20" stroke="#FFDAB9" stroke-width="4"/>
+      <line x1="40" y1="26" x2="48" y2="20" stroke="#FFDAB9" stroke-width="4"/>
+      <!-- Legs -->
+      <line x1="28" y1="40" x2="24" y2="50" stroke="#FFDAB9" stroke-width="4"/>
+      <line x1="36" y1="40" x2="40" y2="50" stroke="#FFDAB9" stroke-width="4"/>
+    </g>
+  </svg>
+</div>
+
+<script>
+/*
+  Tony Hawk's Pro Skater 2 (2D Minimal Tribute)
+  - Single half-pipe environment
+  - Arrow Left/Right to roll in the half-pipe
+  - Space to jump
+  - Number keys 1..4 (or Q/W/E/R) for tricks in mid-air
+  - Score combos by stringing multiple tricks in one jump
+  - 2-minute timer, at end show final score
+
+  All purely in one HTML/CSS/JS file with no external dependencies.
+*/
+
+/*************************************************
+ * CANVAS & GLOBAL SETUP
+ *************************************************/
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Fullscreen the canvas
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+/*************************************************
+ * GAME STATE
+ *************************************************/
+// 2-minute timer
+let timeLeft = 120;
+let score = 0;
+let comboScore = 0;   // points accumulated in one air
+let inAir = false;    // are we currently in the air?
+
+// Half-pipe geometry (we'll do a simple "U" shape)
+const pipeWidth = 800;
+const pipeLeftX = (canvas.width - pipeWidth)/2;
+const pipeRightX = pipeLeftX + pipeWidth;
+const groundY = canvas.height - 100; // bottom area for the pipe
+let rampHeight = 250; // how tall the walls are
+// We'll do a simple smooth curve from left to right using a quarter-circle at each end
+
+// Skater physics
+let skaterX = canvas.width/2;
+let skaterY = groundY;
+let skaterVX = 0;  // horizontal velocity
+let skaterVY = 0;  // vertical velocity
+let onGround = true;
+let gravity = 1000;  // px/s^2
+let friction = 0.98;
+let maxGroundSpeed = 400; // horizontal
+let jumpSpeed = 600;
+
+// Controls
+const keys = {
+  left: false,
+  right: false,
+  space: false,
+  trick1: false, // for key 1 / Q
+  trick2: false, // for key 2 / W
+  trick3: false, // for key 3 / E
+  trick4: false, // for key 4 / R
+};
+
+// Trick definitions
+const trickList = [
+  { name: "Kickflip", basePoints: 100 },
+  { name: "Heelflip", basePoints: 150 },
+  { name: "Indy Grab", basePoints: 200 },
+  { name: "360 Spin", basePoints: 250 }
+];
+
+/*************************************************
+ * INPUT HANDLING
+ *************************************************/
+function handleKeyDown(e) {
+  if (e.key === 'ArrowLeft') keys.left = true;
+  if (e.key === 'ArrowRight') keys.right = true;
+  if (e.key === ' ' || e.key === 'Spacebar') keys.space = true;
+  if (e.key === '1' || e.key.toLowerCase() === 'q') keys.trick1 = true;
+  if (e.key === '2' || e.key.toLowerCase() === 'w') keys.trick2 = true;
+  if (e.key === '3' || e.key.toLowerCase() === 'e') keys.trick3 = true;
+  if (e.key === '4' || e.key.toLowerCase() === 'r') keys.trick4 = true;
+}
+function handleKeyUp(e) {
+  if (e.key === 'ArrowLeft') keys.left = false;
+  if (e.key === 'ArrowRight') keys.right = false;
+  if (e.key === ' ' || e.key === 'Spacebar') keys.space = false;
+  if (e.key === '1' || e.key.toLowerCase() === 'q') keys.trick1 = false;
+  if (e.key === '2' || e.key.toLowerCase() === 'w') keys.trick2 = false;
+  if (e.key === '3' || e.key.toLowerCase() === 'e') keys.trick3 = false;
+  if (e.key === '4' || e.key.toLowerCase() === 'r') keys.trick4 = false;
+}
+window.addEventListener('keydown', handleKeyDown);
+window.addEventListener('keyup', handleKeyUp);
+
+/*************************************************
+ * GAME FLOW
+ *************************************************/
+const timeValueEl = document.getElementById('timeValue');
+const scoreValueEl = document.getElementById('scoreValue');
+const gameOverOverlay = document.getElementById('gameOverOverlay');
+const finalScoreEl = document.getElementById('finalScore');
+const restartBtn = document.getElementById('restartBtn');
+restartBtn.addEventListener('click', restartGame);
+
+function restartGame() {
+  // Reset everything
+  timeLeft = 120;
+  score = 0;
+  comboScore = 0;
+  inAir = false;
+  skaterX = canvas.width/2;
+  skaterY = groundY;
+  skaterVX = 0;
+  skaterVY = 0;
+  onGround = true;
+  gameOverOverlay.style.display = 'none';
+  // Start loop again
+  lastTime = performance.now();
+  requestAnimationFrame(gameLoop);
+}
+
+// End game
+function endGame() {
+  finalScoreEl.textContent = score;
+  gameOverOverlay.style.display = 'block';
+}
+
+/*************************************************
+ * RENDERING
+ *************************************************/
+// Draw half-pipe
+function drawHalfPipe() {
+  ctx.save();
+  ctx.fillStyle = '#6B8E23'; // some greenish ramp color
+  ctx.beginPath();
+  // We'll do a basic shape: 
+  //  - left quarter circle
+  //  - flat bottom
+  //  - right quarter circle
+  // The bottom line is at groundY, the top of the ramp is groundY - rampHeight
+  // left quarter circle center: (pipeLeftX, groundY - rampHeight)
+  // right quarter circle center: (pipeRightX, groundY - rampHeight)
+
+  // left arc
+  ctx.moveTo(pipeLeftX, groundY);
+  ctx.arc(pipeLeftX, groundY, rampHeight, 0, -Math.PI/2, true);
+
+  // line across the top from left to right arc
+  // top is (pipeLeftX + rampHeight, groundY - rampHeight) to (pipeRightX - rampHeight, groundY - rampHeight)
+  ctx.lineTo(pipeRightX, groundY - rampHeight);
+
+  // right arc
+  ctx.arc(pipeRightX, groundY, rampHeight, -Math.PI/2, 0, true);
+
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// We'll store the minimal skater shape in code. For variety, let's just define a function that draws the skater silhouette or reads from hidden <svg>... 
+// We'll do a quick path-based approach for demonstration:
+function drawSkater(x, y, angle) {
+  // We'll rotate around the skater's center
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+
+  // Minimal silhouette
+  // Board
+  ctx.fillStyle = '#654321';
+  ctx.fillRect(-24, +16, 48, 4);
+
+  // Body
+  ctx.beginPath();
+  ctx.arc(0, 0, 12, 0, 2*Math.PI); // torso
+  ctx.fillStyle = '#FFDAB9';
+  ctx.fill();
+
+  // Head
+  ctx.beginPath();
+  ctx.arc(0, -16, 6, 0, 2*Math.PI);
+  ctx.fillStyle = '#FFE4C4';
+  ctx.fill();
+
+  ctx.strokeStyle = '#FFDAB9';
+  ctx.lineWidth = 4;
+  // Arms
+  ctx.beginPath();
+  ctx.moveTo(-8, -6); 
+  ctx.lineTo(-16, -12);
+  ctx.moveTo(8, -6);
+  ctx.lineTo(16, -12);
+  ctx.stroke();
+  // Legs
+  ctx.beginPath();
+  ctx.moveTo(-4, 12);
+  ctx.lineTo(-8, 16);
+  ctx.moveTo(4, 12);
+  ctx.lineTo(8, 16);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// We'll also render scoreboard & timer via DOM, so no need to draw text on canvas for that.
+
+/*************************************************
+ * PHYSICS & UPDATE
+ *************************************************/
+let lastTime = performance.now();
+
+function gameLoop(now) {
+  let dt = (now - lastTime)/1000;
+  lastTime = now;
+
+  // Update timer
+  timeLeft -= dt;
+  if (timeLeft <= 0) {
+    timeLeft = 0;
+    timeValueEl.textContent = '0';
+    // end game
+    endGame();
+    return;
+  }
+  timeValueEl.textContent = Math.floor(timeLeft);
+
+  // Handle horizontal movement on the ground
+  if (onGround) {
+    // apply input
+    if (keys.left) {
+      skaterVX -= 500 * dt; 
+    }
+    if (keys.right) {
+      skaterVX += 500 * dt;
+    }
+    // clamp horizontal speed
+    if (Math.abs(skaterVX) > maxGroundSpeed) {
+      skaterVX = maxGroundSpeed * Math.sign(skaterVX);
+    }
+    // friction
+    skaterVX *= friction;
+  } else {
+    // in air, can slightly control with left/right but weaker
+    if (keys.left) {
+      skaterVX -= 200 * dt;
+    }
+    if (keys.right) {
+      skaterVX += 200 * dt;
+    }
+  }
+
+  // Jump
+  if (keys.space && onGround) {
+    skaterVY = -jumpSpeed;
+    onGround = false;
+    inAir = true;
+    comboScore = 0; // start new combo potential
+  }
+
+  // Apply gravity if in the air
+  if (!onGround) {
+    skaterVY += gravity * dt;
+  }
+
+  // Update position
+  skaterX += skaterVX * dt;
+  skaterY += skaterVY * dt;
+
+  // Boundaries & collisions with ramp
+  // We'll do a naive approach: if skater is below groundY, put them on ground. 
+  // But we also have the curved ramp edges. We'll just approximate for demonstration.
+  if (skaterX < pipeLeftX) {
+    // We'll approximate the quarter circle on left
+    // the circle center is at (pipeLeftX, groundY)
+    // radius = rampHeight
+    const dx = skaterX - pipeLeftX;
+    const dy = skaterY - groundY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < rampHeight) {
+      // push out
+      const overlap = rampHeight - dist;
+      const nx = dx/dist; 
+      const ny = dy/dist;
+      skaterX -= nx*overlap;
+      skaterY -= ny*overlap;
+
+      if (ny < 0 && skaterVY > 0) {
+        // landed?
+        skaterVY = 0;
+        onGround = true;
+        inAir = false;
+        // add combo to total score
+        if (comboScore > 0) {
+          score += comboScore;
+          comboScore = 0;
+          scoreValueEl.textContent = score;
+        }
+      }
+    }
+  } else if (skaterX > pipeRightX) {
+    // right quarter circle center is (pipeRightX, groundY)
+    const dx = skaterX - pipeRightX;
+    const dy = skaterY - groundY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < rampHeight) {
+      const overlap = rampHeight - dist;
+      const nx = dx/dist; 
+      const ny = dy/dist;
+      skaterX -= nx*overlap;
+      skaterY -= ny*overlap;
+
+      if (ny < 0 && skaterVY > 0) {
+        // landed
+        skaterVY = 0;
+        onGround = true;
+        inAir = false;
+        if (comboScore > 0) {
+          score += comboScore;
+          comboScore = 0;
+          scoreValueEl.textContent = score;
+        }
+      }
+    }
+  } else {
+    // middle section is flat
+    if (skaterY > groundY) {
+      skaterY = groundY;
+      skaterVY = 0;
+      onGround = true;
+      inAir = false;
+      // if we had some combo points, add to total
+      if (comboScore > 0) {
+        score += comboScore;
+        comboScore = 0;
+        scoreValueEl.textContent = score;
+      }
+    }
+  }
+
+  // TRICKS while in the air
+  if (inAir) {
+    if (keys.trick1) { doTrick(0); keys.trick1 = false; }
+    if (keys.trick2) { doTrick(1); keys.trick2 = false; }
+    if (keys.trick3) { doTrick(2); keys.trick3 = false; }
+    if (keys.trick4) { doTrick(3); keys.trick4 = false; }
+  }
+
+  // Clear
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw ramp
+  drawHalfPipe();
+
+  // Draw skater
+  // We can set angle based on velocity if we want
+  let angle = Math.atan2(skaterVY, skaterVX);
+  // For a side-scroller feel, maybe just tilt slightly if moving left or right
+  let tilt = Math.max(-0.5, Math.min(0.5, skaterVX / 300));
+  drawSkater(skaterX, skaterY, tilt);
+
+  // Next frame
+  requestAnimationFrame(gameLoop);
+}
+
+/*************************************************
+ * TRICK LOGIC
+ *************************************************/
+function doTrick(trickIndex) {
+  if (trickIndex < 0 || trickIndex >= trickList.length) return;
+  const trick = trickList[trickIndex];
+  // Score formula: basePoints + small bonus for chaining multiple in same air
+  // e.g. each new trick in one jump adds 1.2 multiplier
+  const base = trick.basePoints;
+  const multi = 1 + (comboScore / 1000); // or just a small factor
+  const pointsAwarded = Math.floor(base * multi);
+  comboScore += pointsAwarded;
+  // optionally do some on-screen text effect or sound, omitted for brevity
+}
+
+/*************************************************
+ * START THE GAME
+ *************************************************/
+let startTime = performance.now();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

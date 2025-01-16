@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Minimal DOOM-like Raycaster</title>
+<style>
+  html, body {
+    margin: 0; 
+    padding: 0; 
+    overflow: hidden; 
+    background: #000; 
+    height: 100%; 
+    width: 100%;
+    font-family: sans-serif;
+    user-select: none;
+  }
+  #gameContainer {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background: black;
+    overflow: hidden;
+  }
+  canvas {
+    position: absolute;
+    top: 0; 
+    left: 0;
+    display: block;
+  }
+  /* Gun / HUD container */
+  #hud {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 25%;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  /* Minimal gun graphic for DOOM-like feel */
+  #gun {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    height: 100%;
+  }
+  /* Stats overlay at top-left */
+  #statsOverlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    color: #0f0;
+    background: rgba(0,0,0,0.3);
+    padding: 4px 6px;
+    font-size: 14px;
+    border-bottom-right-radius: 8px;
+    pointer-events: none;
+  }
+  /* Optional crosshair or reticle */
+  #crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 32px;
+    height: 32px;
+    margin-left: -16px;
+    margin-top: -16px;
+    pointer-events: none;
+    opacity: 0.25;
+  }
+</style>
+</head>
+
+<body>
+<div id="gameContainer">
+  <canvas id="view"></canvas>
+
+  <!-- Minimal crosshair SVG -->
+  <svg id="crosshair" viewBox="0 0 64 64">
+    <circle cx="32" cy="32" r="30" fill="none" stroke="#fff" stroke-width="2"/>
+    <line x1="32" y1="2" x2="32" y2="14" stroke="#fff" stroke-width="2"/>
+    <line x1="32" y1="50" x2="32" y2="62" stroke="#fff" stroke-width="2"/>
+    <line x1="2" y1="32" x2="14" y2="32" stroke="#fff" stroke-width="2"/>
+    <line x1="50" y1="32" x2="62" y2="32" stroke="#fff" stroke-width="2"/>
+  </svg>
+
+  <!-- HUD containing “gun” -->
+  <div id="hud">
+    <!-- Minimal gun graphic as inline SVG -->
+    <svg id="gun" viewBox="0 0 120 80" preserveAspectRatio="xMidYMid meet">
+      <rect x="50" y="40" width="20" height="30" fill="#444"/>
+      <rect x="55" y="15" width="10" height="25" fill="#666"/>
+      <circle cx="60" cy="20" r="5" fill="#999"/>
+      <rect x="56" y="0" width="8" height="15" fill="#999"/>
+      <text x="4" y="78" fill="#aaa" font-size="10" font-family="monospace">MINI-DOOM</text>
+    </svg>
+  </div>
+
+  <!-- Stats Overlay -->
+  <div id="statsOverlay">HP: <span id="hpStat">100</span><br/>Kills: <span id="killStat">0</span></div>
+</div>
+
+<script>
+/*
+ * Minimal DOOM-Like Raycaster
+ * No external dependencies
+ * Controls: WASD to move, Q/E or Left/Right to rotate, Up/Down to look up/down
+ * Click to shoot. Simple enemies roam around. If they collide with you, you lose HP.
+ * For demonstration only. This is not a full DOOM engine, just a small prototype.
+ */
+
+/***************
+ * GAME SETUP 
+ ***************/
+const canvas = document.getElementById('view');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// Attach pointer lock for mouse look (if desired)
+document.body.addEventListener('click', () => {
+  // Attempt to request pointer lock
+  if (document.body.requestPointerLock) {
+    document.body.requestPointerLock();
+  }
+});
+
+// Listen for pointer lock move events
+let yaw = 0;
+let pitch = 0;
+document.addEventListener('mousemove', (e) => {
+  if (document.pointerLockElement === document.body) {
+    yaw += e.movementX * 0.0025;
+    pitch -= e.movementY * 0.0025;
+    // clamp pitch
+    if (pitch > Math.PI/2) pitch = Math.PI/2;
+    if (pitch < -Math.PI/2) pitch = -Math.PI/2;
+  }
+});
+
+// Basic map layout (grid-based).
+// 0 = empty floor
+// 1 = wall
+// Keep this small for performance
+const map = [
+  [1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,1],
+  [1,1,1,1,1,1,1,1,1,1],
+];
+const mapW = map[0].length;
+const mapH = map.length;
+
+// Player’s starting position
+let playerX = 3.5;
+let playerY = 3.5;
+let playerAngle = 0; // same as yaw, but we'll keep a separate variable for simpler math
+let playerHP = 100;
+let kills = 0;
+
+// Movement flags
+const keys = { w:false, a:false, s:false, d:false, q:false, e:false, ArrowLeft:false, ArrowRight:false, ArrowUp:false, ArrowDown:false };
+document.addEventListener('keydown', e => { if(keys.hasOwnProperty(e.key)) keys[e.key] = true; });
+document.addEventListener('keyup', e => { if(keys.hasOwnProperty(e.key)) keys[e.key] = false; });
+
+// Minimal inline enemy sprite (SVG path to draw as 2D billboard)
+const enemySVGPath = "M0,0 L10,0 L10,20 L5,25 L0,20 Z"; // a little shape
+
+// We'll keep track of enemies as objects with x, y, and HP
+let enemies = [
+  {x:6.5, y:6.5, hp:20, alive:true},
+  {x:7.5, y:2.5, hp:20, alive:true},
+  {x:2.5, y:7.5, hp:20, alive:true}
+];
+
+// Because we won't do full texture mapping in this minimal example, 
+// let's do a single vertical slice raycasting approach with color shading
+function castRays() {
+  // We'll sample in columns (like Wolfenstein 3D style).
+  const numRays = canvas.width;
+  const fov = Math.PI/3; // 60 degrees
+  const halfFov = fov / 2;
+  const viewDist = (canvas.width/2) / Math.tan(fov/2);
+
+  // Precompute cos/sin of playerAngle
+  const cosA = Math.cos(playerAngle);
+  const sinA = Math.sin(playerAngle);
+
+  for (let x=0; x < numRays; x++) {
+    // rayAngle is from (playerAngle - halfFov) to (playerAngle + halfFov)
+    const rayScreenPos = -numRays/2 + x; 
+    const rayAngle = playerAngle + Math.atan(rayScreenPos / viewDist);
+
+    // cast the ray until a wall is hit
+    let distanceToWall = 0;
+    let hitWall = false;
+    let sinRay = Math.sin(rayAngle);
+    let cosRay = Math.cos(rayAngle);
+
+    while (!hitWall && distanceToWall < 20) {
+      distanceToWall += 0.01;
+      let testX = Math.floor(playerX + cosRay * distanceToWall);
+      let testY = Math.floor(playerY + sinRay * distanceToWall);
+      if (testX < 0 || testX >= mapW || testY < 0 || testY >= mapH) {
+        // out of bounds, pretend it's a wall
+        hitWall = true;
+        distanceToWall = 20;
+      } else if (map[testY][testX] === 1) {
+        hitWall = true;
+      }
+    }
+
+    // reduce fish-eye by using cos of difference
+    const fix = Math.cos(rayAngle - playerAngle);
+    distanceToWall *= fix;
+
+    // compute slice height
+    const wallHeight = Math.floor(canvas.height / distanceToWall);
+    const start = Math.floor(canvas.height/2 - wallHeight/2);
+    const end = Math.floor(canvas.height/2 + wallHeight/2);
+
+    // color shading
+    const shade = Math.min(255, 255 - distanceToWall*15);
+    ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
+    ctx.fillRect(x, 0, 1, start); // ceiling
+    ctx.fillStyle = `rgb(${shade/2},0,0)`; 
+    ctx.fillRect(x, start, 1, end - start); // wall
+    ctx.fillStyle = `rgb(0,${shade/4},0)`; 
+    ctx.fillRect(x, end, 1, canvas.height - end); // floor
+  }
+}
+
+// Minimal function to check collision with walls
+function canMove(nx, ny) {
+  if (nx < 0 || ny < 0 || nx >= mapW || ny >= mapH) return false;
+  if (map[Math.floor(ny)][Math.floor(nx)] === 1) return false;
+  return true;
+}
+
+// Handle shooting
+document.addEventListener('click', shoot);
+function shoot() {
+  // We’ll do a simple ray in front of player for a short distance, if it hits an enemy, do damage
+  const range = 2.0;
+  let foundEnemy = null;
+  let closestDist = Infinity;
+  enemies.forEach(enemy => {
+    if (!enemy.alive) return;
+    const dx = enemy.x - playerX;
+    const dy = enemy.y - playerY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < range) {
+      // angle check
+      const angleToEnemy = Math.atan2(dy, dx) - playerAngle;
+      let normalizedAngle = angleToEnemy;
+      while (normalizedAngle < -Math.PI) normalizedAngle += 2*Math.PI;
+      while (normalizedAngle > Math.PI) normalizedAngle -= 2*Math.PI;
+      const fov = Math.PI / 4; // narrower for shooting
+      if (Math.abs(normalizedAngle) < fov && dist < closestDist) {
+        closestDist = dist;
+        foundEnemy = enemy;
+      }
+    }
+  });
+  if (foundEnemy) {
+    foundEnemy.hp -= 10;
+    if (foundEnemy.hp <= 0) {
+      foundEnemy.alive = false;
+      kills++;
+      document.getElementById('killStat').textContent = kills;
+    }
+  }
+}
+
+// Move & update enemies
+function update(dt) {
+  // Turn
+  if (keys.q || keys.ArrowLeft) playerAngle -= 1.5 * dt;
+  if (keys.e || keys.ArrowRight) playerAngle += 1.5 * dt;
+
+  // Move forward/back
+  const speed = 2;
+  let forward = 0;
+  if (keys.w) forward = 1;
+  if (keys.s) forward = -1;
+
+  // Strafe left/right
+  let strafe = 0;
+  if (keys.a) strafe = -1;
+  if (keys.d) strafe = 1;
+
+  let nx = playerX + Math.cos(playerAngle) * forward * speed * dt;
+  let ny = playerY + Math.sin(playerAngle) * forward * speed * dt;
+  if (canMove(nx, ny)) { playerX = nx; playerY = ny; }
+
+  nx = playerX + Math.cos(playerAngle + Math.PI/2) * strafe * speed * dt;
+  ny = playerY + Math.sin(playerAngle + Math.PI/2) * strafe * speed * dt;
+  if (canMove(nx, ny)) { playerX = nx; playerY = ny; }
+
+  // Sync the main angle to the “yaw” from mouse
+  playerAngle = yaw;
+
+  // Enemies: if alive, do a minimal “walk toward player” AI
+  enemies.forEach(enemy => {
+    if (!enemy.alive) return;
+    const dx = playerX - enemy.x;
+    const dy = playerY - enemy.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist > 0.1) {
+      const moveSpeed = 1.0 * dt;
+      const ex = enemy.x + (dx/dist)*moveSpeed;
+      const ey = enemy.y + (dy/dist)*moveSpeed;
+      // check collision with walls
+      if (canMove(ex, ey)) {
+        enemy.x = ex; enemy.y = ey;
+      }
+    }
+    // if close enough, do damage
+    if (dist < 0.4) {
+      playerHP -= 10 * dt; 
+      if (playerHP < 0) playerHP = 0;
+      document.getElementById('hpStat').textContent = Math.floor(playerHP);
+    }
+  });
+
+  // If HP <= 0, reload
+  if (playerHP <= 0) {
+    alert("You died! Refresh to restart.");
+    // freeze
+    playerHP = 0;
+  }
+}
+
+/***************
+ * RENDER 2D BILLBOARD SPRITES (ENEMIES)
+ ***************/
+function renderSprites() {
+  // We'll do a painter's sort (draw from far to near)
+  const sprites = [];
+  enemies.forEach(enemy => {
+    if (!enemy.alive) return;
+    const dx = enemy.x - playerX;
+    const dy = enemy.y - playerY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const angleToPlayer = Math.atan2(dy, dx) - playerAngle;
+    // keep angle in [-pi, pi]
+    let a = angleToPlayer;
+    while (a < -Math.PI) a += 2*Math.PI;
+    while (a > Math.PI) a -= 2*Math.PI;
+    sprites.push({enemy, dist, angle:a});
+  });
+  // sort descending by dist
+  sprites.sort((a,b) => b.dist - a.dist);
+
+  sprites.forEach(s => {
+    const dist = s.dist;
+    const angle = s.angle;
+    // very rough cull if not in front
+    if (angle < -Math.PI/2 || angle > Math.PI/2) return;
+
+    // vertical slice approach
+    const viewDist = (canvas.width/2) / Math.tan((Math.PI/3)/2);
+    const fix = Math.cos(angle);
+    const z = dist * fix;
+    const spriteHeight = canvas.height / z;
+    const spriteWidth = spriteHeight; // square
+    const xCenter = canvas.width/2 + Math.tan(angle) * viewDist;
+
+    // draw
+    ctx.save();
+    ctx.translate(xCenter - spriteWidth/2, canvas.height/2 - spriteHeight/2);
+    // quick color for enemy shape
+    ctx.fillStyle = "#F00";
+    // use a path resembling the minimal enemy SVG
+    // scale it by spriteWidth/10 or so
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(spriteWidth*1, 0);
+    ctx.lineTo(spriteWidth*1, spriteHeight*0.25);
+    ctx.lineTo(spriteWidth*0.5, spriteHeight*0.4);
+    ctx.lineTo(0, spriteHeight*0.25);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+/***************
+ * MAIN LOOP
+ ***************/
+let lastTime = performance.now();
+function loop(now) {
+  const dt = (now - lastTime) / 1000;
+  lastTime = now;
+
+  update(dt);
+
+  // Clear screen
+  ctx.fillStyle = 'black';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // Render 3D walls
+  castRays();
+
+  // Render sprites on top
+  renderSprites();
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// Handle window resize
+window.addEventListener('resize', () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+});
+
+</script>
+</body>
+</html>

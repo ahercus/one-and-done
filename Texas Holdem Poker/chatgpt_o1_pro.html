@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Texas Hold'em Poker (Single-File)</title>
+  <style>
+    /* =========================================
+       GLOBAL & LAYOUT
+    ========================================== */
+    * {
+      box-sizing: border-box;
+      font-family: sans-serif;
+      margin: 0; padding: 0;
+    }
+    body {
+      background: #0B3D0B; /* Dark green-ish */
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 1rem;
+    }
+    h1 {
+      margin: 0.5rem 0;
+      text-align: center;
+    }
+    button {
+      border: none;
+      background: #444;
+      color: #fff;
+      border-radius: 5px;
+      padding: 0.5rem 1rem;
+      margin: 0.3rem;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #666;
+    }
+    .hidden {
+      display: none !important;
+    }
+
+    /* Container for the table layout */
+    #table-container {
+      width: 100%;
+      max-width: 1000px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* =========================================
+       POKER TABLE SECTIONS
+    ========================================== */
+    #opponents-container {
+      width: 100%;
+      display: flex;
+      justify-content: space-around;
+      margin-bottom: 1rem;
+    }
+    .opponent {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 120px;
+    }
+    .opponent h3 {
+      margin: 0.2rem 0;
+    }
+    .card-row {
+      display: flex;
+      gap: 0.2rem;
+    }
+
+    #community-cards {
+      display: flex;
+      gap: 0.2rem;
+      margin-bottom: 1rem;
+    }
+
+    #player-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 1rem;
+    }
+
+    /* =========================================
+       CARD STYLE (SVG-based for suits)
+    ========================================== */
+    .card {
+      width: 60px;
+      height: 80px;
+      background: #fff;
+      border: 2px solid #222;
+      border-radius: 6px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card.hidden {
+      background: #ccc;
+      border-color: #666;
+    }
+    .card .card-rank {
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      font-size: 14px;
+      font-weight: bold;
+    }
+    .card .card-suit {
+      position: absolute;
+      bottom: 4px;
+      right: 4px;
+      width: 16px;
+      height: 16px;
+    }
+    .card.red .card-rank {
+      color: red;
+    }
+
+    /* =========================================
+       CONTROL PANEL
+    ========================================== */
+    #controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin: 1rem 0;
+      gap: 0.5rem;
+    }
+    #bet-amount {
+      width: 60px;
+    }
+
+    /* =========================================
+       MISC
+    ========================================== */
+    #message {
+      background: rgba(255,255,255,0.2);
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      min-height: 1.5rem;
+      margin-top: 0.5rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Texas Hold'em Poker (Single-File Prototype)</h1>
+
+<div id="table-container">
+
+  <!-- OPPONENTS -->
+  <div id="opponents-container">
+    <!-- We'll have 3 opponents for demonstration -->
+    <div class="opponent" id="opp-1">
+      <h3>Opponent 1</h3>
+      <div class="card-row" id="opp-1-cards"></div>
+      <p>Chips: <span id="opp-1-chips"></span></p>
+    </div>
+    <div class="opponent" id="opp-2">
+      <h3>Opponent 2</h3>
+      <div class="card-row" id="opp-2-cards"></div>
+      <p>Chips: <span id="opp-2-chips"></span></p>
+    </div>
+    <div class="opponent" id="opp-3">
+      <h3>Opponent 3</h3>
+      <div class="card-row" id="opp-3-cards"></div>
+      <p>Chips: <span id="opp-3-chips"></span></p>
+    </div>
+  </div>
+
+  <!-- COMMUNITY CARDS -->
+  <div id="community-cards"></div>
+  <p>Pot: <span id="pot-display">0</span></p>
+
+  <!-- CONTROLS -->
+  <div id="controls">
+    <button id="btn-deal">Deal</button>
+    <button id="btn-check-call" class="hidden">Check/Call</button>
+    <button id="btn-bet-raise" class="hidden">Bet/Raise</button>
+    <input type="number" id="bet-amount" class="hidden" min="10" value="10" />
+    <button id="btn-fold" class="hidden">Fold</button>
+    <button id="btn-next-hand" class="hidden">Next Hand</button>
+  </div>
+
+  <!-- PLAYER AREA -->
+  <div id="player-area">
+    <h2>You</h2>
+    <div class="card-row" id="player-cards"></div>
+    <p>Chips: <span id="player-chips"></span></p>
+  </div>
+
+  <!-- MESSAGE/ANNOUNCEMENTS -->
+  <div id="message"></div>
+
+</div>
+
+<script>
+/* 
+  ============================================
+  TEXAS HOLD'EM POKER - SINGLE FILE PROTOTYPE
+  ============================================
+  
+  Key aspects:
+  - Single round of betting for each stage: pre-flop, flop, turn, river, then showdown.
+  - Opponents have random decisions: fold, call, or raise.
+  - Minimal "chips" logic and pot calculations.
+  - Basic hand evaluator for 5+2 cards (7 total).
+  - Single-file, no external libs, minimal styling & logic. 
+*/
+
+/* ==============================
+   GLOBAL STATE
+============================== */
+const SUITS = ['♣','♦','♥','♠'];
+const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+
+// We'll keep an inline SVG for each suit for fancy card visuals:
+const SUIT_SVG = {
+  '♣': `<svg viewBox="0 0 50 50"><path d="M25 10 C15 10 10 20 20 20 C10 20 10 30 20 30 C18 33 19 36 25 40 C31 36 32 33 30 30 C40 30 40 20 30 20 C40 20 35 10 25 10 Z" fill="black"/></svg>`,
+  '♦': `<svg viewBox="0 0 50 50"><path d="M25 5 L40 25 L25 45 L10 25 Z" fill="red"/></svg>`,
+  '♥': `<svg viewBox="0 0 50 50"><path d="M25 42 C-10 15 12 -5 25 10 C38 -5 60 15 25 42 Z" fill="red"/></svg>`,
+  '♠': `<svg viewBox="0 0 50 50"><path d="M25 5 C10 25 0 30 25 45 C50 30 40 25 25 5 Z M20 45 A5 5 0 0 0 30 45 A5 5 0 0 0 20 45" fill="black"/></svg>`
+};
+
+let deck = [];
+let pot = 0;
+let stage = 0; // 0=preflop, 1=flop, 2=turn, 3=river, 4=showdown
+
+// We'll store each player's info as an object
+// ID 0 = human player, 1..3 = opponents
+let players = [
+  { id: 0, name: 'You', chips: 1000, cards: [], folded: false, betThisRound: 0 },
+  { id: 1, name: 'Opponent 1', chips: 1000, cards: [], folded: false, betThisRound: 0 },
+  { id: 2, name: 'Opponent 2', chips: 1000, cards: [], folded: false, betThisRound: 0 },
+  { id: 3, name: 'Opponent 3', chips: 1000, cards: [], folded: false, betThisRound: 0 }
+];
+
+// Community cards
+let communityCards = [];
+
+// Current bet/raise that players need to call
+let currentBet = 0;
+
+// Active player index (we'll mostly skip for the random AI)
+let currentPlayerIndex = 0;
+
+// DOM references
+const playerChipsSpan = document.getElementById('player-chips');
+const potDisplay = document.getElementById('pot-display');
+const messageEl = document.getElementById('message');
+const playerCardsEl = document.getElementById('player-cards');
+const opponentsEl = [
+  document.getElementById('opp-1-cards'),
+  document.getElementById('opp-2-cards'),
+  document.getElementById('opp-3-cards')
+];
+const oppChipsSpan = [
+  document.getElementById('opp-1-chips'),
+  document.getElementById('opp-2-chips'),
+  document.getElementById('opp-3-chips')
+];
+const communityEl = document.getElementById('community-cards');
+
+const btnDeal = document.getElementById('btn-deal');
+const btnCheckCall = document.getElementById('btn-check-call');
+const btnBetRaise = document.getElementById('btn-bet-raise');
+const inputBetAmount = document.getElementById('bet-amount');
+const btnFold = document.getElementById('btn-fold');
+const btnNextHand = document.getElementById('btn-next-hand');
+
+/* ==============================
+   INITIAL SETUP
+============================== */
+function initGame() {
+  updateUI();
+}
+initGame();
+
+/* ==============================
+   UI / HELPERS
+============================== */
+function updateUI() {
+  // Update pot
+  potDisplay.textContent = pot;
+  // Update chips
+  playerChipsSpan.textContent = players[0].chips;
+  for (let i = 1; i < 4; i++) {
+    oppChipsSpan[i-1].textContent = players[i].chips;
+  }
+}
+
+function clearBoard() {
+  // Clear community cards
+  communityCards = [];
+  communityEl.innerHTML = '';
+  // Clear all players' hands
+  for (const p of players) {
+    p.cards = [];
+    p.folded = false;
+    p.betThisRound = 0;
+  }
+  // Reset pot, stage, etc.
+  pot = 0;
+  stage = 0;
+  currentBet = 0;
+  updateUI();
+  // Clear card displays
+  playerCardsEl.innerHTML = '';
+  for (let i=0; i<3; i++) {
+    opponentsEl[i].innerHTML = '';
+  }
+  messageEl.textContent = '';
+}
+
+function createCardHTML(rank, suit, hidden=false) {
+  const cardDiv = document.createElement('div');
+  cardDiv.classList.add('card');
+  if (hidden) {
+    cardDiv.classList.add('hidden');
+  }
+  const isRed = (suit==='♦' || suit==='♥');
+  if (isRed) {
+    cardDiv.classList.add('red');
+  }
+  const rankDiv = document.createElement('div');
+  rankDiv.classList.add('card-rank');
+  rankDiv.textContent = hidden ? '' : rank;
+  cardDiv.appendChild(rankDiv);
+  if (!hidden) {
+    const suitDiv = document.createElement('div');
+    suitDiv.classList.add('card-suit');
+    suitDiv.innerHTML = SUIT_SVG[suit];
+    cardDiv.appendChild(suitDiv);
+  }
+  return cardDiv;
+}
+
+/* ==============================
+   DECK / DEALING
+============================== */
+function buildDeck() {
+  const d = [];
+  for (const s of SUITS) {
+    for (const r of RANKS) {
+      d.push({ rank: r, suit: s });
+    }
+  }
+  return d;
+}
+function shuffle(array) {
+  for (let i = array.length - 1; i>0; i--) {
+    const j = Math.floor(Math.random()* (i+1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+function dealNewHand() {
+  clearBoard();
+  deck = shuffle(buildDeck());
+
+  // Deal 2 cards to each player
+  for (let i=0; i<2; i++) {
+    for (let p=0; p<players.length; p++) {
+      players[p].cards.push(deck.pop());
+    }
+  }
+
+  // Display player's cards
+  for (let c of players[0].cards) {
+    const cardEl = createCardHTML(c.rank, c.suit, false);
+    playerCardsEl.appendChild(cardEl);
+  }
+  // Opponents' cards (hidden)
+  for (let i=1; i<4; i++) {
+    const oppArea = opponentsEl[i-1];
+    // Show them facedown
+    for (let c of players[i].cards) {
+      oppArea.appendChild(createCardHTML(c.rank, c.suit, true));
+    }
+  }
+
+  messageEl.textContent = 'Dealt new hand. Place your bets.';
+  // Toggle buttons
+  btnDeal.classList.add('hidden');
+  btnCheckCall.classList.remove('hidden');
+  btnBetRaise.classList.remove('hidden');
+  inputBetAmount.classList.remove('hidden');
+  btnFold.classList.remove('hidden');
+  btnNextHand.classList.add('hidden');
+
+  updateUI();
+}
+
+/* ==============================
+   BETTING LOGIC
+============================== */
+function getActivePlayers() {
+  return players.filter(p => !p.folded && p.chips > 0);
+}
+
+// Player bets or raises
+function playerBetRaise() {
+  const bet = parseInt(inputBetAmount.value);
+  if (isNaN(bet) || bet <= 0) {
+    messageEl.textContent = 'Invalid bet amount.';
+    return;
+  }
+  if (bet > players[0].chips) {
+    messageEl.textContent = 'You do not have enough chips.';
+    return;
+  }
+  // If bet <= currentBet, interpret as calling up to that amount
+  if (bet < currentBet - players[0].betThisRound) {
+    messageEl.textContent = 'Bet must match or exceed call amount. Try pressing "Check/Call" instead.';
+    return;
+  }
+  // Place bet
+  placeBet(0, bet);
+  proceedAfterPlayerAction();
+}
+
+function placeBet(playerId, amount) {
+  // The amount is how much additional they put in beyond their current bet this round
+  const add = amount - players[playerId].betThisRound;
+  players[playerId].chips -= add;
+  pot += add;
+  players[playerId].betThisRound = amount;
+  if (amount > currentBet) {
+    currentBet = amount;
+  }
+  updateUI();
+}
+
+// Player check/call
+function playerCheckCall() {
+  const toCall = currentBet - players[0].betThisRound;
+  if (toCall <= 0) {
+    // Check
+    messageEl.textContent = 'You check.';
+  } else {
+    // Call
+    if (toCall > players[0].chips) {
+      // all-in if not enough chips
+      placeBet(0, players[0].betThisRound + players[0].chips);
+      messageEl.textContent = 'You go all-in.';
+    } else {
+      placeBet(0, currentBet);
+      messageEl.textContent = `You call ${toCall}.`;
+    }
+  }
+  proceedAfterPlayerAction();
+}
+
+// Player folds
+function playerFold() {
+  players[0].folded = true;
+  messageEl.textContent = 'You fold.';
+  proceedAfterPlayerAction();
+}
+
+/* After the player acts, let opponents act and if all done, move to next stage if possible */
+function proceedAfterPlayerAction() {
+  updateUI();
+  setTimeout(() => {
+    // Opponents act
+    for (let i=1; i<4; i++) {
+      if (!players[i].folded && players[i].chips > 0) {
+        opponentAction(i);
+      }
+    }
+    // If at least two players remain, we proceed
+    if (getActivePlayers().length < 2) {
+      endHand();
+      return;
+    }
+    // Next stage if all calls matched or folded
+    if (allBetsAreEqualOrAllButOneFolded()) {
+      nextStage();
+    } else {
+      // There's still more betting? We'll just assume a single betting round per stage for this basic demo
+      nextStage();
+    }
+  }, 800);
+}
+
+// Basic AI logic for opponents
+function opponentAction(i) {
+  const me = players[i];
+  if (me.folded || me.chips <= 0) return;
+  // Calculate how much to call
+  const toCall = currentBet - me.betThisRound;
+  // Random decision
+  const rand = Math.random();
+  if (rand < 0.2 && toCall > 0) {
+    // fold 20% chance if there's a call
+    me.folded = true;
+  } else if (rand < 0.3 && toCall > 0) {
+    // call
+    if (toCall > me.chips) {
+      placeBet(i, me.betThisRound + me.chips); // all in
+    } else {
+      placeBet(i, currentBet);
+    }
+  } else if (rand < 0.3 && toCall <= 0) {
+    // random small raise
+    const raiseAmt = 10 + Math.floor(Math.random()*30);
+    const total = currentBet + raiseAmt;
+    if (total > me.chips) {
+      placeBet(i, me.betThisRound + me.chips); // all in
+    } else {
+      placeBet(i, total);
+      messageEl.textContent = `${me.name} raises to ${total}`;
+    }
+  } else {
+    // check/call
+    if (toCall <= 0) {
+      // check
+    } else {
+      if (toCall > me.chips) {
+        placeBet(i, me.betThisRound + me.chips); // all in
+      } else {
+        placeBet(i, currentBet);
+      }
+    }
+  }
+}
+
+// Check if all active players have the same bet or only 1 is left
+function allBetsAreEqualOrAllButOneFolded() {
+  const active = getActivePlayers();
+  if (active.length <= 1) return true;
+  // Check if all have the same betThisRound
+  const firstBet = active[0].betThisRound;
+  for (let i=1; i<active.length; i++) {
+    if (active[i].betThisRound !== firstBet) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/* ==============================
+   GAME STAGES (preflop->flop->turn->river->showdown)
+============================== */
+function nextStage() {
+  // Reset bets
+  for (let p of players) {
+    p.betThisRound = 0;
+  }
+  currentBet = 0;
+
+  stage++;
+  if (stage === 1) {
+    // flop
+    dealCommunity(3);
+    messageEl.textContent = 'Flop is dealt. Place your bets.';
+  } else if (stage === 2) {
+    // turn
+    dealCommunity(1);
+    messageEl.textContent = 'Turn card is dealt. Place your bets.';
+  } else if (stage === 3) {
+    // river
+    dealCommunity(1);
+    messageEl.textContent = 'River card is dealt. Final betting.';
+  } else if (stage === 4) {
+    // showdown
+    endHand();
+    return;
+  }
+  updateUI();
+}
+
+// Deal n community cards
+function dealCommunity(n) {
+  for (let i=0; i<n; i++) {
+    const card = deck.pop();
+    communityCards.push(card);
+    // Display card
+    const cardEl = createCardHTML(card.rank, card.suit, false);
+    communityEl.appendChild(cardEl);
+  }
+}
+
+/* ==============================
+   SHOWDOWN / DETERMINE WINNER
+============================== */
+function endHand() {
+  // If only one player left not folded, that player wins pot
+  const active = getActivePlayers();
+  if (active.length === 1) {
+    active[0].chips += pot;
+    messageEl.textContent = `${active[0].name} wins ${pot} by default!`;
+  } else {
+    // Show opponents' cards
+    for (let i=1; i<4; i++) {
+      const oppArea = opponentsEl[i-1];
+      oppArea.innerHTML = ''; // clear hidden
+      const pl = players[i];
+      for (let c of pl.cards) {
+        const cardEl = createCardHTML(c.rank, c.suit, false);
+        oppArea.appendChild(cardEl);
+      }
+    }
+
+    // Evaluate best hands
+    let bestScore = -1;
+    let winners = [];
+    for (let p of active) {
+      const score = evaluateBest5of7([...p.cards, ...communityCards]);
+      if (score > bestScore) {
+        bestScore = score;
+        winners = [p];
+      } else if (score === bestScore) {
+        winners.push(p);
+      }
+    }
+    if (winners.length === 1) {
+      winners[0].chips += pot;
+      messageEl.textContent = `${winners[0].name} wins ${pot} with a score of ${bestScore}!`;
+    } else {
+      // tie, split pot
+      messageEl.textContent = `Tie! Players split pot. Score = ${bestScore}`;
+      const share = Math.floor(pot / winners.length);
+      for (let w of winners) {
+        w.chips += share;
+      }
+    }
+  }
+
+  // End of hand
+  btnCheckCall.classList.add('hidden');
+  btnBetRaise.classList.add('hidden');
+  inputBetAmount.classList.add('hidden');
+  btnFold.classList.add('hidden');
+  btnNextHand.classList.remove('hidden');
+
+  updateUI();
+}
+
+/* 
+  ============================================
+  HAND EVALUATION (simple points-based approach)
+  ============================================
+  We'll combine ranks into numeric values, detect pairs, three-of-a-kinds, 
+  straights, flushes, etc. 
+  For brevity, we'll do a rudimentary "score" function 
+  (not perfectly replicating standard ranking nuances, but sufficient 
+  for demonstration).
+*/
+function evaluateBest5of7(cards) {
+  // cards = array of {rank, suit}
+  // Convert ranks to numbers
+  const rankValues = cards.map(c => rankToValue(c.rank)).sort((a,b) => a-b);
+  const suits = cards.map(c => c.suit);
+
+  // Generate all 5-card combos from these 7 cards
+  const combos = getCombinations(cards, 5);
+  let best = -1;
+  for (let combo of combos) {
+    const val = evaluate5cardHand(combo);
+    if (val > best) best = val;
+  }
+  return best;
+}
+
+// For a single 5-card hand
+function evaluate5cardHand(hand) {
+  // We'll do a quick approach with rank frequencies, suit frequencies
+  const ranks = hand.map(c => rankToValue(c.rank)).sort((a,b) => a-b);
+  const suits = hand.map(c => c.suit);
+
+  // Count frequencies
+  const freq = {};
+  for (let r of ranks) {
+    freq[r] = (freq[r] || 0) + 1;
+  }
+  const suitFreq = {};
+  for (let s of suits) {
+    suitFreq[s] = (suitFreq[s] || 0) + 1;
+  }
+
+  // Identify pairs, trips, quads
+  let pairs = 0, three = 0, four = 0;
+  let distinctRanks = [];
+  for (let r in freq) {
+    if (freq[r] === 2) pairs++;
+    if (freq[r] === 3) three++;
+    if (freq[r] === 4) four++;
+    distinctRanks.push(parseInt(r));
+  }
+  distinctRanks.sort((a,b)=>a-b);
+  // Straight?
+  let isStraight = false;
+  if (distinctRanks.length === 5) {
+    // check sequential
+    if (distinctRanks[4] - distinctRanks[0] === 4) {
+      isStraight = true;
+    }
+    // check special Ace-low
+    // (Ace =14, if we see 2,3,4,5 => Ace can be 1)
+    if (distinctRanks[0] === 2 &&
+        distinctRanks[1] === 3 &&
+        distinctRanks[2] === 4 &&
+        distinctRanks[3] === 5 &&
+        distinctRanks[4] === 14) {
+      isStraight = true;
+    }
+  }
+  // Flush?
+  let isFlush = false;
+  for (let s in suitFreq) {
+    if (suitFreq[s] === 5) {
+      isFlush = true;
+    }
+  }
+
+  // We'll assign a numeric score to the 5-card combo, higher = better
+  // This is a rough scale (not 100% official):
+  //  9 = Straight Flush
+  //  8 = Four of a Kind
+  //  7 = Full House
+  //  6 = Flush
+  //  5 = Straight
+  //  4 = Three of a Kind
+  //  3 = Two Pair
+  //  2 = One Pair
+  //  1 = High Card
+  // We'll also incorporate the top card rank as a smaller factor
+  // This is a simplistic approach for demonstration.
+
+  let rankMax = Math.max(...ranks);
+  let score = 0;
+  if (isStraight && isFlush) score = 9;
+  else if (four) score = 8;
+  else if (three && pairs === 1) score = 7; // full house
+  else if (isFlush) score = 6;
+  else if (isStraight) score = 5;
+  else if (three) score = 4;
+  else if (pairs === 2) score = 3;
+  else if (pairs === 1) score = 2;
+  else score = 1;
+
+  // Add a bit for high card tie breaks
+  return score * 100 + rankMax;
+}
+
+function rankToValue(rank) {
+  if (rank === 'A') return 14;
+  if (rank === 'K') return 13;
+  if (rank === 'Q') return 12;
+  if (rank === 'J') return 11;
+  return parseInt(rank); // 2-10
+}
+
+// Combinations nCr from array
+function getCombinations(array, size) {
+  function* doComb(start, chooseLeft, acc) {
+    if (chooseLeft === 0) {
+      yield acc.slice();
+      return;
+    }
+    for (let i=start; i<=array.length-chooseLeft; i++) {
+      acc.push(array[i]);
+      yield* doComb(i+1, chooseLeft-1, acc);
+      acc.pop();
+    }
+  }
+  return [...doComb(0, size, [])];
+}
+
+/* ==============================
+   EVENT HANDLERS
+============================== */
+btnDeal.addEventListener('click', dealNewHand);
+btnCheckCall.addEventListener('click', playerCheckCall);
+btnBetRaise.addEventListener('click', playerBetRaise);
+btnFold.addEventListener('click', playerFold);
+btnNextHand.addEventListener('click', () => {
+  // Next hand
+  dealNewHand();
+});
+
+/* Start the game with the initial UI */
+updateUI();
+</script>
+</body>
+</html>

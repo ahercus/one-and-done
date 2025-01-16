@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mini Sims Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            background: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .game-container {
+            display: flex;
+            flex: 1;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        .game-world {
+            flex: 1;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .controls {
+            width: 300px;
+            background: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .needs-panel {
+            margin-top: 20px;
+        }
+
+        .need-bar {
+            height: 20px;
+            background: #eee;
+            border-radius: 10px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+
+        .need-fill {
+            height: 100%;
+            background: #4CAF50;
+            transition: width 0.3s;
+        }
+
+        .furniture {
+            position: absolute;
+            cursor: pointer;
+        }
+
+        .character {
+            position: absolute;
+            transition: all 0.5s;
+            cursor: pointer;
+            z-index: 10;
+        }
+
+        button {
+            background: #4CAF50;
+            border: none;
+            padding: 10px 20px;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.2);
+            z-index: 100;
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 99;
+        }
+
+        .inventory {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .inventory-item {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            text-align: center;
+        }
+
+        .inventory-item:hover {
+            background: #e0e0e0;
+        }
+
+        .money-display {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #45a049;
+        }
+
+        .action-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            pointer-events: none;
+            z-index: 100;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="game-world" id="gameWorld">
+            <!-- Character and furniture will be added here dynamically -->
+        </div>
+        <div class="controls">
+            <div class="money-display">§<span id="moneyDisplay">1000</span></div>
+            <div class="needs-panel">
+                <h3>Needs</h3>
+                <div>
+                    <label>Energy</label>
+                    <div class="need-bar">
+                        <div class="need-fill" id="energyBar" style="width: 100%"></div>
+                    </div>
+                </div>
+                <div>
+                    <label>Hunger</label>
+                    <div class="need-bar">
+                        <div class="need-fill" id="hungerBar" style="width: 100%"></div>
+                    </div>
+                </div>
+                <div>
+                    <label>Fun</label>
+                    <div class="need-bar">
+                        <div class="need-fill" id="funBar" style="width: 100%"></div>
+                    </div>
+                </div>
+                <div>
+                    <label>Hygiene</label>
+                    <div class="need-bar">
+                        <div class="need-fill" id="hygieneBar" style="width: 100%"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="action-buttons">
+                <button onclick="openBuyMenu()">Buy Items</button>
+                <button onclick="toggleWorkMode()">Work</button>
+                <button onclick="save()">Save Game</button>
+                <button onclick="load()">Load Game</button>
+            </div>
+            <div class="inventory" id="inventory">
+                <!-- Inventory items will be added here dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="buyModal">
+        <h2>Buy Items</h2>
+        <div class="shop-items">
+            <button onclick="buyItem('bed')">Bed (§200)</button>
+            <button onclick="buyItem('fridge')">Fridge (§300)</button>
+            <button onclick="buyItem('tv')">TV (§400)</button>
+            <button onclick="buyItem('shower')">Shower (§250)</button>
+        </div>
+        <button onclick="closeBuyMenu()">Close</button>
+    </div>
+    <div class="modal-overlay" id="modalOverlay"></div>
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        // Game state
+        const state = {
+            money: 1000,
+            character: {
+                x: 100,
+                y: 100,
+                isWorking: false,
+                needs: {
+                    energy: 100,
+                    hunger: 100,
+                    fun: 100,
+                    hygiene: 100
+                }
+            },
+            furniture: [],
+            inventory: []
+        };
+
+        // SVG definitions for furniture and character
+        const svgDefs = {
+            character: `
+                <svg width="40" height="60" viewBox="0 0 40 60">
+                    <circle cx="20" cy="15" r="12" fill="#FFD700"/>
+                    <rect x="10" y="27" width="20" height="30" fill="#4169E1"/>
+                    <rect x="12" y="57" width="6" height="3" fill="#000"/>
+                    <rect x="22" y="57" width="6" height="3" fill="#000"/>
+                </svg>
+            `,
+            bed: `
+                <svg width="80" height="40" viewBox="0 0 80 40">
+                    <rect x="0" y="10" width="80" height="30" fill="#8B4513"/>
+                    <rect x="5" y="5" width="70" height="10" fill="#DEB887"/>
+                    <rect x="5" y="15" width="70" height="20" fill="#F5DEB3"/>
+                </svg>
+            `,
+            fridge: `
+                <svg width="40" height="60" viewBox="0 0 40 60">
+                    <rect x="0" y="0" width="40" height="60" fill="#C0C0C0"/>
+                    <rect x="30" y="10" width="5" height="10" fill="#808080"/>
+                    <rect x="30" y="40" width="5" height="10" fill="#808080"/>
+                </svg>
+            `,
+            tv: `
+                <svg width="60" height="40" viewBox="0 0 60 40">
+                    <rect x="0" y="0" width="60" height="40" fill="#000"/>
+                    <rect x="5" y="5" width="50" height="30" fill="#4169E1"/>
+                    <rect x="25" y="35" width="10" height="5" fill="#808080"/>
+                </svg>
+            `,
+            shower: `
+                <svg width="40" height="60" viewBox="0 0 40 60">
+                    <rect x="5" y="0" width="30" height="10" fill="#C0C0C0"/>
+                    <rect x="15" y="10" width="10" height="50" fill="#4682B4"/>
+                    <circle cx="20" cy="5" r="3" fill="#808080"/>
+                </svg>
+            `
+        };
+
+        // Initialize game
+        function init() {
+            createCharacter();
+            updateUI();
+            startGameLoop();
+            loadGame();
+        }
+
+        // Create character
+        function createCharacter() {
+            const character = document.createElement('div');
+            character.className = 'character';
+            character.innerHTML = svgDefs.character;
+            character.style.left = state.character.x + 'px';
+            character.style.top = state.character.y + 'px';
+            document.getElementById('gameWorld').appendChild(character);
+            
+            // Make character draggable
+            let isDragging = false;
+            let currentX;
+            let currentY;
+
+            character.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                currentX = e.clientX - state.character.x;
+                currentY = e.clientY - state.character.y;
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    const gameWorld = document.getElementById('gameWorld');
+                    const rect = gameWorld.getBoundingClientRect();
+                    
+                    state.character.x = Math.min(Math.max(0, e.clientX - rect.left - currentX), rect.width - 40);
+                    state.character.y = Math.min(Math.max(0, e.clientY - rect.top - currentY), rect.height - 60);
+                    
+                    character.style.left = state.character.x + 'px';
+                    character.style.top = state.character.y + 'px';
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+        }
+
+        // Buy furniture
+        function buyItem(type) {
+            const costs = {
+                bed: 200,
+                fridge: 300,
+                tv: 400,
+                shower: 250
+            };
+
+            if (state.money >= costs[type]) {
+                state.money -= costs[type];
+                const item = {
+                    type,
+                    x: 100,
+                    y: 100,
+                    id: Date.now()
+                };
+                state.furniture.push(item);
+                createFurnitureElement(item);
+                updateUI();
+                closeBuyMenu();
+            } else {
+                alert("Not enough money!");
+            }
+        }
+
+        // Create furniture element
+        function createFurnitureElement(item) {
+            const furniture = document.createElement('div');
+            furniture.className = 'furniture';
+            furniture.innerHTML = svgDefs[item.type];
+            furniture.style.left = item.x + 'px';
+            furniture.style.top = item.y + 'px';
+            furniture.dataset.id = item.id;
+            
+            // Make furniture draggable
+            let isDragging = false;
+            let currentX;
+            let currentY;
+
+            furniture.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                const rect = furniture.getBoundingClientRect();
+                currentX = e.clientX - rect.left;
+                currentY = e.clientY - rect.top;
+                e.stopPropagation();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    const gameWorld = document.getElementById('gameWorld');
+                    const rect = gameWorld.getBoundingClientRect();
+                    
+                    const x = Math.min(Math.max(0, e.clientX - rect.left - currentX), rect.width - furniture.offsetWidth);
+                    const y = Math.min(Math.max(0, e.clientY - rect.top - currentY), rect.height - furniture.offsetHeight);
+                    
+                    furniture.style.left = x + 'px';
+                    furniture.style.top = y + 'px';
+                    
+                    const itemIndex = state.furniture.findIndex(f => f.id === Number(furniture.dataset.id));
+                    if (itemIndex !== -1) {
+                        state.furniture[itemIndex].x = x;
+                        state.furniture[itemIndex].y = y;
+                    }
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+
+            // Add interaction
+            furniture.addEventListener('click', () => {
+                if (!isDragging) {
+                    interactWithFurniture(item);
+                }
+            });
+
+            // Add tooltip
+            furniture.addEventListener('mouseenter', (e) => {
+                showTooltip(getTooltipText(item.type), e);
+            });
+
+            furniture.addEventListener('mouseleave', () => {
+                hideTooltip();
+            });
+
+            document.getElementById('gameWorld').appendChild(furniture);
+        }
+
+        // Interaction with furniture
+        function interactWithFurniture(item) {
+            const character = document.querySelector('.character');
+            const characterRect = character.getBoundingClientRect();
+            const furniture = document.querySelector(`[data-id="${item.id}"]`);
+            const furnitureRect = furniture.getBoundingClientRect();
+
+            // Check if character is close enough to interact
+            const distance = Math.sqrt(
+                Math.pow(characterRect.left - furnitureRect.left, 2) +
+                Math.pow(characterRect.top - furnitureRect.top, 2)
+            );
+
+            if (distance > 100) {
+                alert("Move closer to interact!");
+                return;
+            }
+
+            switch (item.type) {
+                case 'bed':
+                    state.character.needs.energy = Math.min(100, state.character.needs.energy + 30);
+                    break;
+                case 'fridge':
+                    state.character.needs.hunger = Math.min(100, state.character.needs.hunger + 30);
+                    state.money -= 10;
+                    break;
+                case 'tv':
+                    state.character.needs.fun = Math.min(100, state.character.needs.fun + 20);
+                    state.money -= 5;
+                    break;
+                case 'shower':
+                    state.character.needs.hygiene = Math.min(100, state.character.needs.hygiene + 25);
+                    state.money -= 8;
+                    break;
+            }
+            updateUI();
+        }
+
+        // UI updates
+        function updateUI() {
+            document.getElementById('moneyDisplay').textContent = state.money;
+            document.getElementById('energyBar').style.width = state.character.needs.energy + '%';
+            document.getElementById('hungerBar').style.width = state.character.needs.hunger + '%';
+            document.getElementById('funBar').style.width = state.character.needs.fun + '%';
+            document.getElementById('hygieneBar').style.width = state.character.needs.hygiene + '%';
+        }
+
+        // Work mode
+        function toggleWorkMode() {
+            state.character.isWorking = !state.character.isWorking;
+            const button = document.querySelector('button:nth-child(2)');
+            button.textContent = state.character.isWorking ? 'Stop Working' : 'Work';
+            
+            if (state.character.isWorking) {
+                state.character.needs.energy -= 10;
+                state.character.needs.fun -= 10;
+                state.money += 100;
+                updateUI();
+            }
+        }
+
+        // Tooltips
+        function showTooltip(text, event) {
+            const tooltip = document.getElementById('tooltip');
+            tooltip.textContent = text;
+            tooltip.style.left = event.pageX + 10 + 'px';
+            tooltip.style.top = event.pageY + 10 + 'px';
+            tooltip.style.display = 'block';
+        }
+
+        function hideTooltip() {
+            document.getElementById('tooltip').style.display = 'none';
+        }
+
+        function getTooltipText(type) {
+            const tooltips = {
+                bed: 'Sleep to restore energy',
+                fridge: 'Get food (Costs §10)',
+                tv: 'Watch TV for fun (Costs §5)',
+                shower: 'Take a shower (Costs §8)'
+            };
+            return tooltips[type];
+        }
+
+        // Buy menu
+        function openBuyMenu() {
+            document.getElementById('buyModal').style.display = 'block';
+            document.getElementById('modalOverlay').style.display = 'block';
+        }
+
+        function closeBuyMenu() {
+            document.getElementById('buyModal').style.display = 'none';
+            document.getElementById('modalOverlay').style.display = 'none';
+        }
+
+        // Save/Load functionality
+        function save() {
+            localStorage.setItem('simsGameState', JSON.stringify(state));
+            alert('Game saved!');
+        }
+
+        function load() {
+            const savedState = localStorage.getItem('simsGameState');
+            if (savedState) {
+                const parsedState = JSON.parse(savedState);
+                Object.assign(state, parsedState);
+                
+                // Recreate furniture
+                document.getElementById('gameWorld').innerHTML = '';
+                createCharacter();
+                state.furniture.forEach(item => createFurnitureElement(item));
+                
+                updateUI();
+            }
+        }
+
+        // Game loop
+        function startGameLoop() {
+            setInterval(() => {
+                // Decrease needs over time
+                state.character.needs.energy = Math.max(0, state.character.needs.energy - 0.5);
+                state.character.needs.hunger = Math.max(0, state.character.needs.hunger - 0.7);
+                state.character.needs.fun = Math.max(0, state.character.needs.fun - 0.3);
+                state.character.needs.hygiene = Math.max(0, state.character.needs.hygiene - 0.4);
+
+                // Work income
+                if (state.character.isWorking) {
+                    state.money += 5;
+                    state.character.needs.energy = Math.max(0, state.character.needs.energy - 1);
+                    state.character.needs.fun = Math.max(0, state.character.needs.fun - 1);
+                }
+
+                // Check game over conditions
+                if (Object.values(state.character.needs).some(need => need === 0)) {
+                    alert('Game Over! Your Sim is too stressed!');
+                    location.reload();
+                }
+
+                updateUI();
+            }, 1000);
+        }
+
+        // Initialize game on load
+        window.onload = init;
+    </script>
+</body>
+</html>

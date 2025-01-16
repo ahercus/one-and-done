@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>DOOM: One & Done</title>
+<style>
+body { margin: 0; overflow: hidden; background-color: #222; font-family: sans-serif; }
+#game-container { position: relative; width: 800px; height: 600px; margin: 50px auto; overflow: hidden; background-color: #333; border: 2px solid #555;}
+#player { position: absolute; width: 20px; height: 30px; background-color: #00f; top: 285px; left: 390px; border-radius: 3px; transition: left 0.1s, top 0.1s; }
+.wall { position: absolute; background-color: #666; border: 1px solid #777; }
+.enemy { position: absolute; width: 20px; height: 20px; background-color: #f00; border-radius: 50%; transition: left 0.1s, top 0.1s; }
+#health-bar { position: absolute; top: 10px; left: 10px; width: 150px; height: 10px; background-color: #444; border: 1px solid #555; }
+#health-bar-fill { height: 100%; background-color: #0f0; }
+#score-display {position:absolute; top:10px; right: 10px; color:white; font-size:16px}
+#crosshair{ position:absolute; left: 50%; top: 50%; width:20px; height:20px; margin-left: -10px; margin-top: -10px; border: 1px solid white; border-radius: 50%; pointer-events:none}
+.bullet { position:absolute; width:4px; height:4px; border-radius:50%; background-color:yellow; pointer-events:none; }
+#game-over { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: red; font-size: 40px; display: none;  }
+.splatter { position:absolute; width:5px; height:5px; background-color:red; border-radius:50%; pointer-events: none; z-index: 100;}
+</style>
+</head>
+<body>
+<div id="game-container">
+    <div id="player"></div>
+	<div id="crosshair"></div>
+    <div id="health-bar"><div id="health-bar-fill"></div></div>
+	<div id="score-display">Score: 0</div>
+    <div id="game-over">GAME OVER</div>
+</div>
+<script>
+const gameContainer = document.getElementById('game-container');
+const player = document.getElementById('player');
+const healthBarFill = document.getElementById('health-bar-fill');
+const scoreDisplay = document.getElementById('score-display');
+const gameOverDisplay = document.getElementById('game-over');
+const crosshair = document.getElementById('crosshair');
+let playerX = 390;
+let playerY = 285;
+let playerHealth = 100;
+let score = 0;
+let gameOver = false;
+let playerSpeed = 4;
+let bullets = [];
+
+// Map data (walls) - hardcoded rectangles
+const walls = [
+{x: 0, y: 0, width: 20, height: 600},
+{x: 780, y: 0, width: 20, height: 600},
+{x: 0, y: 0, width: 800, height: 20},
+{x: 0, y: 580, width: 800, height: 20},
+{x: 150, y: 100, width: 500, height: 20},
+{x: 150, y: 400, width: 500, height: 20},
+{x: 300, y: 250, width: 20, height: 100},
+];
+
+// Enemy data (initial positions)
+let enemies = [
+	{x: 100, y: 50, speedX: 1, speedY: 1},
+	{x: 700, y: 50, speedX: -1, speedY: 1},
+	{x: 100, y: 500, speedX: 1, speedY: -1},
+	{x: 700, y: 500, speedX: -1, speedY: -1}
+];
+
+
+function createWallElement(wall) {
+    const wallElement = document.createElement('div');
+    wallElement.classList.add('wall');
+    wallElement.style.left = wall.x + 'px';
+    wallElement.style.top = wall.y + 'px';
+    wallElement.style.width = wall.width + 'px';
+    wallElement.style.height = wall.height + 'px';
+    gameContainer.appendChild(wallElement);
+}
+
+function createEnemyElement(enemy){
+  const enemyElement = document.createElement('div');
+  enemyElement.classList.add('enemy');
+  enemyElement.style.left = enemy.x + 'px';
+  enemyElement.style.top = enemy.y + 'px';
+  gameContainer.appendChild(enemyElement)
+  return enemyElement;
+}
+
+function init(){
+    walls.forEach(createWallElement);
+    enemies = enemies.map(enemy => ({...enemy, element: createEnemyElement(enemy)}))
+}
+
+function updatePlayerPosition() {
+    player.style.left = playerX + 'px';
+    player.style.top = playerY + 'px';
+}
+
+function updateHealthBar() {
+    healthBarFill.style.width = playerHealth + '%';
+	healthBarFill.style.backgroundColor = playerHealth > 50 ? "#0f0" : playerHealth > 25 ? 'orange' : 'red'
+}
+
+
+function createBullet(x,y, angle){
+	 const bullet = document.createElement('div');
+	 bullet.classList.add('bullet');
+	 bullet.style.left = x + 'px';
+	 bullet.style.top = y + 'px';
+	 gameContainer.appendChild(bullet);
+	 bullets.push({x:x, y:y, angle:angle, element:bullet});
+}
+
+function checkWallCollision(x, y, width, height) {
+    for (const wall of walls) {
+        if (x + width > wall.x && x < wall.x + wall.width && y + height > wall.y && y < wall.y + wall.height) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function checkEnemyCollision(x, y, width, height, enemy) {
+        if (x + width > enemy.x && x < enemy.x + 20 && y + height > enemy.y && y < enemy.y + 20) {
+            return true;
+        }
+    return false
+}
+
+function updateEnemies(){
+	enemies.forEach(enemy => {
+		let nextX = enemy.x + enemy.speedX;
+		let nextY = enemy.y + enemy.speedY;
+		if(checkWallCollision(nextX, enemy.y, 20, 20)){
+		   enemy.speedX *= -1;
+		   nextX = enemy.x + enemy.speedX;
+		}
+		if(checkWallCollision(enemy.x, nextY, 20, 20)){
+		  enemy.speedY *= -1;
+		   nextY = enemy.y + enemy.speedY;
+		}
+		enemy.x = nextX;
+		enemy.y = nextY;
+		enemy.element.style.left = enemy.x + 'px';
+		enemy.element.style.top = enemy.y + 'px';
+
+
+		if(checkEnemyCollision(playerX, playerY, 20, 30, enemy)){
+			 playerHealth -= 1;
+			 updateHealthBar();
+			 if(playerHealth <= 0) gameOver = true;
+		}
+	})
+}
+
+
+function updateBullets(){
+	bullets.forEach((bullet, index) => {
+		const speed = 10;
+		bullet.x += Math.cos(bullet.angle) * speed;
+		bullet.y += Math.sin(bullet.angle) * speed;
+		bullet.element.style.left = bullet.x + 'px';
+		bullet.element.style.top = bullet.y + 'px';
+
+		if(bullet.x < 0 || bullet.x > 800 || bullet.y < 0 || bullet.y > 600) {
+			bullet.element.remove();
+			bullets.splice(index,1);
+			return;
+		}
+
+		enemies.forEach((enemy, enemyIndex) => {
+			if(checkEnemyCollision(bullet.x, bullet.y, 4, 4, enemy)){
+				createSplatter(enemy.x, enemy.y)
+				enemy.element.remove();
+				enemies.splice(enemyIndex,1);
+				bullet.element.remove();
+				bullets.splice(index,1);
+				score += 10;
+				scoreDisplay.textContent = "Score: " + score;
+			}
+		})
+	})
+}
+function createSplatter(x,y){
+	for(let i = 0; i< 10; i++){
+		const splatter = document.createElement('div');
+		splatter.classList.add('splatter');
+		splatter.style.left = x + Math.random() * 20 - 10 + 'px';
+		splatter.style.top = y +  Math.random() * 20 - 10 + 'px';
+		gameContainer.appendChild(splatter);
+		setTimeout(() => splatter.remove(), 500);
+	}
+}
+function handleInput(event) {
+	if(gameOver) return;
+
+    const key = event.key.toLowerCase();
+    let newX = playerX;
+    let newY = playerY;
+
+    if (key === 'a' || key === 'arrowleft')  newX -= playerSpeed;
+    if (key === 'd' || key === 'arrowright') newX += playerSpeed;
+    if (key === 'w' || key === 'arrowup')    newY -= playerSpeed;
+    if (key === 's' || key === 'arrowdown')  newY += playerSpeed;
+
+
+    if (!checkWallCollision(newX, playerY, 20, 30)) playerX = newX;
+    if (!checkWallCollision(playerX, newY, 20, 30)) playerY = newY;
+
+    updatePlayerPosition();
+
+	if(key === ' '){
+		const angle = Math.atan2(event.clientY - playerY - 15, event.clientX - playerX - 10)
+		createBullet(playerX + 10, playerY + 15, angle)
+	}
+}
+function updateCrosshair(event){
+	crosshair.style.left = event.clientX + 'px'
+	crosshair.style.top = event.clientY + 'px'
+}
+function gameLoop() {
+    if(gameOver){
+        gameOverDisplay.style.display = 'block';
+        return;
+    }
+	updateEnemies();
+	updateBullets();
+    requestAnimationFrame(gameLoop);
+}
+init();
+document.addEventListener('keydown', handleInput);
+document.addEventListener('click', handleInput);
+document.addEventListener('mousemove', updateCrosshair)
+updateHealthBar();
+gameLoop();
+</script>
+</body>
+</html>

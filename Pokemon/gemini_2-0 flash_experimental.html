@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>One and Done Pokemon</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            color: #333;
+        }
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            border: 2px solid #888;
+            padding: 20px;
+            background-color: white;
+            border-radius: 10px;
+            width: 80%;
+            max-width: 600px;
+        }
+        #map-container {
+            display: grid;
+            grid-template-columns: repeat(10, 30px);
+            grid-template-rows: repeat(10, 30px);
+            border: 1px solid #ddd;
+            margin-bottom: 20px;
+        }
+       .map-tile {
+            width: 30px;
+            height: 30px;
+            box-sizing: border-box;
+        }
+        .grass { background-color: #a2f298; }
+        .path { background-color: #e0c391; }
+         .player{
+            background-color: #3498db;
+            position: relative;
+         }
+         .pokemon{
+            background-color: #ffc0cb;
+            position:relative;
+        }
+        .player::after {
+            content: "";
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #2980b9;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .pokemon::after {
+            content: "";
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #e91e63;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        #controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+       button {
+           padding: 10px 15px;
+           cursor: pointer;
+            background-color: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+       }
+        #battle-log {
+            border: 1px solid #ddd;
+            padding: 10px;
+            height: 100px;
+            overflow-y: scroll;
+            margin-top: 10px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <h1>One and Done Pokemon</h1>
+        <div id="map-container">
+           <!-- Map is built dynamically by JS -->
+        </div>
+        <div id="controls">
+            <button onclick="movePlayer('up')">Up</button>
+            <button onclick="movePlayer('down')">Down</button>
+            <button onclick="movePlayer('left')">Left</button>
+            <button onclick="movePlayer('right')">Right</button>
+        </div>
+        <div id="battle-log"></div>
+    </div>
+
+    <script>
+        // Game Data
+        const mapWidth = 10;
+        const mapHeight = 10;
+        let playerPosition = { x: 1, y: 1 };
+        let pokemonPosition = {x: 8, y: 8};
+        let currentMap = [
+            ['path', 'path', 'path', 'path', 'path', 'path', 'path', 'path', 'path', 'path'],
+            ['path', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'path'],
+            ['path', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'path'],
+            ['path', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'path'],
+             ['path', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'path'],
+            ['path', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'path'],
+             ['path', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'path'],
+            ['path', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'path'],
+            ['path', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'grass', 'path'],
+            ['path', 'path', 'path', 'path', 'path', 'path', 'path', 'path', 'path', 'path'],
+        ];
+
+
+        function createMap() {
+            const mapContainer = document.getElementById('map-container');
+            mapContainer.innerHTML = '';
+            for (let y = 0; y < mapHeight; y++) {
+                for (let x = 0; x < mapWidth; x++) {
+                    const tile = document.createElement('div');
+                    tile.classList.add('map-tile', currentMap[y][x]);
+                    if(x=== playerPosition.x && y=== playerPosition.y){
+                       tile.classList.add('player');
+                    }
+                     if(x=== pokemonPosition.x && y=== pokemonPosition.y){
+                       tile.classList.add('pokemon');
+                    }
+                    mapContainer.appendChild(tile);
+                }
+            }
+        }
+
+
+      function movePlayer(direction) {
+          let newX = playerPosition.x;
+          let newY = playerPosition.y;
+
+          switch (direction) {
+              case 'up': newY--; break;
+              case 'down': newY++; break;
+              case 'left': newX--; break;
+              case 'right': newX++; break;
+          }
+
+          if (newX >= 0 && newX < mapWidth && newY >= 0 && newY < mapHeight && currentMap[newY][newX] !== 'wall') {
+              playerPosition.x = newX;
+              playerPosition.y = newY;
+              createMap();
+              if(playerPosition.x === pokemonPosition.x && playerPosition.y === pokemonPosition.y){
+                startBattle();
+              }
+          }
+      }
+
+      function startBattle() {
+           logMessage("A wild Pokemon appeared!");
+           setTimeout(()=>{
+             logMessage("You won the battle!");
+             pokemonPosition = {x: -1, y: -1};
+             createMap();
+           },1000);
+       }
+
+        function logMessage(message) {
+            const battleLog = document.getElementById('battle-log');
+            const logEntry = document.createElement('p');
+            logEntry.textContent = message;
+            battleLog.appendChild(logEntry);
+            battleLog.scrollTop = battleLog.scrollHeight;
+        }
+
+        //Initial map load
+        createMap();
+
+    </script>
+
+</body>
+</html>

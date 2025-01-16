@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>One and Done Games - LLM Comparison</title>
+    <style>
+        :root {
+            --neon-blue: #00f3ff;
+            --neon-pink: #ff0099;
+            --dark-bg: #0a0a0a;
+            --card-bg: #1a1a1a;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        @keyframes flicker {
+            0% { opacity: 1; }
+            5% { opacity: 0.9; }
+            10% { opacity: 1; }
+            15% { opacity: 0.9; }
+            20% { opacity: 1; }
+            80% { opacity: 1; }
+            85% { opacity: 0.9; }
+            90% { opacity: 1; }
+            95% { opacity: 0.9; }
+            100% { opacity: 1; }
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: linear-gradient(-45deg, #13001e, #080024, #000c1f, #240019);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+            color: white;
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 3rem;
+            margin-bottom: 2rem;
+            color: var(--neon-blue);
+            text-shadow: 0 0 10px rgba(0, 243, 255, 0.5),
+                         0 0 20px rgba(0, 243, 255, 0.3),
+                         0 0 30px rgba(0, 243, 255, 0.1);
+            animation: flicker 3s infinite;
+        }
+
+        .games-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            padding: 1rem;
+        }
+
+        .game-section {
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .game-section:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 30px rgba(0, 243, 255, 0.2);
+        }
+
+        h2 {
+            color: var(--neon-pink);
+            margin-bottom: 1rem;
+            font-size: 1.8rem;
+            text-shadow: 0 0 10px rgba(255, 0, 153, 0.3);
+        }
+
+        ul {
+            list-style-type: none;
+        }
+
+        li {
+            margin: 0.8rem 0;
+        }
+
+        a {
+            color: #fff;
+            text-decoration: none;
+            display: block;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        a:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateX(5px);
+            border-color: var(--neon-blue);
+            box-shadow: 0 0 10px rgba(0, 243, 255, 0.2);
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .games-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .game-section {
+                margin-bottom: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>One and Done Games</h1>
+        <div class="games-grid">
+            <div class="game-section">
+                <h2>DOOM</h2>
+                <ul>
+                    <li><a href="DOOM/BONUS_chatgpt_o1_pro.html">ChatGPT o1 Pro (Bonus)</a></li>
+                    <li><a href="DOOM/chatgpt_4o.html">ChatGPT 4o</a></li>
+                    <li><a href="DOOM/chatgpt_o1_pro.html">ChatGPT o1 Pro</a></li>
+                    <li><a href="DOOM/chatgpt_o1.html">ChatGPT o1</a></li>
+                    <li><a href="DOOM/claude_sonnet_3-5.html">Claude 3.5 Sonnet</a></li>
+                    <li><a href="DOOM/gemini_2-0_flash_experimental.html">Gemini 2.0 Flash</a></li>
+                    <li><a href="DOOM/gemini_experimental_1206.html">Gemini Experimental</a></li>
+                </ul>
+            </div>
+
+            <div class="game-section">
+                <h2>Pokemon</h2>
+                <ul>
+                    <li><a href="Pokemon/chatgpt_4o.html">ChatGPT 4o</a></li>
+                    <li><a href="Pokemon/chatgpt_o1_pro.html">ChatGPT o1 Pro</a></li>
+                    <li><a href="Pokemon/chatgpt_o1.html">ChatGPT o1</a></li>
+                    <li><a href="Pokemon/claude_sonnet_3-5.html">Claude 3.5 Sonnet</a></li>
+                    <li><a href="Pokemon/gemini_2-0_flash_experimental.html">Gemini 2.0 Flash</a></li>
+                </ul>
+            </div>
+
+            <div class="game-section">
+                <h2>Snake</h2>
+                <ul>
+                    <li><a href="Snake/chatgpt_4o.html">ChatGPT 4o</a></li>
+                    <li><a href="Snake/chatgpt_o1_pro.html">ChatGPT o1 Pro</a></li>
+                    <li><a href="Snake/chatgpt_o1.html">ChatGPT o1</a></li>
+                    <li><a href="Snake/claude_opus.html">Claude Opus</a></li>
+                    <li><a href="Snake/claude_sonnet_3-5.html">Claude 3.5 Sonnet</a></li>
+                    <li><a href="Snake/gemini_2-0_flash_experimental.html">Gemini 2.0 Flash</a></li>
+                </ul>
+            </div>
+
+            <div class="game-section">
+                <h2>Texas Holdem Poker</h2>
+                <ul>
+                    <li><a href="Texas%20Holdem%20Poker/chatgpt_4o.html">ChatGPT 4o</a></li>
+                    <li><a href="Texas%20Holdem%20Poker/chatgpt_o1_pro.html">ChatGPT o1 Pro</a></li>
+                    <li><a href="Texas%20Holdem%20Poker/chatgpt_o1.html">ChatGPT o1</a></li>
+                    <li><a href="Texas%20Holdem%20Poker/gemini_2-0_flash_experimental.html">Gemini 2.0 Flash</a></li>
+                </ul>
+            </div>
+
+            <div class="game-section">
+                <h2>The Sims</h2>
+                <ul>
+                    <li><a href="The%20Sims/chatgpt_4o.html">ChatGPT 4o</a></li>
+                    <li><a href="The%20Sims/chatgpt_o1_pro.html">ChatGPT o1 Pro</a></li>
+                    <li><a href="The%20Sims/chatgpt_o1.html">ChatGPT o1</a></li>
+                    <li><a href="The%20Sims/claude_sonnet_3.5.html">Claude 3.5 Sonnet</a></li>
+                    <li><a href="The%20Sims/gemini%202-0%20flash%20experimental.html">Gemini 2.0 Flash</a></li>
+                </ul>
+            </div>
+
+            <div class="game-section">
+                <h2>THPS2</h2>
+                <ul>
+                    <li><a href="THPS2/chatgpt_o1_pro.html">ChatGPT o1 Pro</a></li>
+                    <li><a href="THPS2/chatgpt_4o.html">ChatGPT 4o</a></li>
+                    <li><a href="THPS2/chatgpt_o1.html">ChatGPT o1</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

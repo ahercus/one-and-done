@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DOOM-Like Raycaster (Canvas-Drawn Sprites)</title>
+<style>
+html, body {
+  margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; color:#fff; font-family:sans-serif;
+}
+canvas { display:block; margin:0 auto; background:#000; }
+#overlay {
+  pointer-events:none; position:absolute; top:0; left:0; width:100%; color:#fff; text-align:center; font-size:14px; font-family:monospace; text-shadow:1px 1px 2px #000; margin-top:5px;
+}
+.health-bar { width:300px; height:20px; background:red; border:1px solid #fff; margin:5px auto; position:relative; }
+.health-inner { background:lime; height:100%; width:100%; }
+#status { margin-top:5px; }
+#crosshair {
+  pointer-events:none; position:absolute; left:50%; top:50%; width:20px; height:20px; margin-left:-10px; margin-top:-10px;
+}
+#crosshair::before, #crosshair::after {
+  content:''; position:absolute; background:#fff;
+}
+#crosshair::before { left:9px; top:0; width:2px; height:20px; }
+#crosshair::after  { top:9px; left:0; width:2px; height:20px; transform:rotate(90deg); transform-origin:center; }
+#minimap {
+  position:absolute; top:10px; right:10px; width:150px; height:150px; background:#222; border:2px solid #fff; pointer-events:none;
+}
+#waveDisplay {
+  pointer-events:none; position:absolute; top:40px; left:50%; transform:translateX(-50%); font-size:18px; font-family:monospace; text-shadow:1px 1px 2px #000;
+}
+#gameOverScreen {
+  display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); color:#fff; font-size:48px; text-align:center; justify-content:center; align-items:center;
+}
+#gameOverScreen div { margin-top:20px; font-size:24px; }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas" width="960" height="600"></canvas>
+<div id="overlay">
+  <div>WASD/Arrows = Move/Turn. SPACE = Shoot. R = Restart.</div>
+  <div class="health-bar"><div class="health-inner" id="healthBar"></div></div>
+  <div id="status"></div>
+</div>
+<div id="crosshair"></div>
+<canvas id="minimap"></canvas>
+<div id="waveDisplay"></div>
+<div id="gameOverScreen">
+  <div>GAME OVER</div>
+  <div>Press R to Restart</div>
+</div>
+
+<script>
+/******************************************************************************
+ * MAP & CONFIG
+ ******************************************************************************/
+let MAP = [
+  [1,1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,3,0,0,2,0,0,1],
+  [1,0,0,0,0,2,0,0,3,0,1],
+  [1,0,0,0,0,0,0,0,0,0,1],
+  [1,0,2,2,2,2,2,2,2,0,1],
+  [1,0,2,0,0,0,0,0,2,0,1],
+  [1,0,2,0,0,0,3,0,2,0,1],
+  [1,0,2,2,2,2,2,2,2,0,1],
+  [1,0,0,0,0,0,0,0,0,0,1],
+  [1,0,3,0,2,0,0,0,0,0,1],
+  [1,1,1,1,1,1,1,1,1,1,1],
+];
+const MAP_W = MAP[0].length;
+const MAP_H = MAP.length;
+const TILE_SIZE = 64;
+
+let playerX = 3.5*TILE_SIZE, playerY = 3.5*TILE_SIZE;
+let playerAngle = 0;
+let playerHealth = 100;
+let kills = 0;
+
+const FOV = Math.PI/3;
+const SPEED = 2.5;
+const TURN_SPEED = 0.07;
+const NUM_RAYS = 240;
+
+let wallStrips = [];
+
+let enemies = [];
+let nextEnemyId = 1;
+const ENEMY_SIZE = 20;
+const ENEMY_SPEED = 0.5;
+const ENEMY_DAMAGE = 15;
+
+let pickups = [];
+const PICKUP_SIZE = 15;
+
+let isShooting = false;
+let shootCooldown = 0;
+let ammo = 50;
+
+/******************************************************************************
+ * GUN ANIMATION FRAMES
+ * We'll "draw" these frames in a function instead of loading an image.
+ ******************************************************************************/
+let gunFrame = 0; 
+let SHOOT_FRAMES = [1,2,1]; // frames to cycle
+
+/******************************************************************************
+ * WAVES
+ ******************************************************************************/
+let wave = 1;
+let waveActive = false;
+let enemiesRemaining = 0;
+let waveDisplayEl = null;
+
+/******************************************************************************
+ * INPUT
+ ******************************************************************************/
+let keys = {};
+
+/******************************************************************************
+ * UTILS
+ ******************************************************************************/
+function dist2d(x1,y1,x2,y2){ let dx=x2-x1; let dy=y2-y1; return Math.sqrt(dx*dx+dy*dy); }
+function clamp(val,min,max){ return Math.max(min,Math.min(val,max)); }
+function fixFishEye(dist, diff){ return dist*Math.cos(diff); }
+
+/******************************************************************************
+ * INIT MAP
+ ******************************************************************************/
+function initMap(){
+  enemies = [];
+  pickups = [];
+  nextEnemyId = 1;
+  for(let y=0;y<MAP_H;y++){
+    for(let x=0;x<MAP_W;x++){
+      let cell = MAP[y][x];
+      if(cell===3){
+        spawnEnemyAt(x,y);
+        MAP[y][x] = 0;
+      }
+      if(cell===0 && Math.random()<0.05){
+        // 5% chance for a pickup
+        if(Math.random()<0.6){
+          pickups.push({type:'health', x:(x+0.5)*TILE_SIZE, y:(y+0.5)*TILE_SIZE});
+        } else {
+          pickups.push({type:'ammo', x:(x+0.5)*TILE_SIZE, y:(y+0.5)*TILE_SIZE});
+        }
+      }
+    }
+  }
+}
+
+/******************************************************************************
+ * WAVES
+ ******************************************************************************/
+function spawnEnemyAt(mx,my){
+  enemies.push({ id: nextEnemyId++, x:(mx+0.5)*TILE_SIZE, y:(my+0.5)*TILE_SIZE, dead:false, health:50 });
+}
+function startWave(w){
+  waveActive=true;
+  waveDisplayEl.innerHTML='Wave '+w+' incoming!';
+  let toSpawn=w*2; // wave size
+  let spawnCells=[];
+  for(let y=0;y<MAP_H;y++){
+    for(let x=0;x<MAP_W;x++){
+      if(MAP[y][x]===0) spawnCells.push({x,y});
+    }
+  }
+  for(let i=0;i<toSpawn;i++){
+    if(spawnCells.length<1) break;
+    let rnd=Math.floor(Math.random()*spawnCells.length);
+    let sc=spawnCells[rnd];
+    spawnCells.splice(rnd,1);
+    spawnEnemyAt(sc.x, sc.y);
+  }
+  enemiesRemaining=toSpawn;
+  setTimeout(()=>{ waveDisplayEl.innerHTML=''; },2000);
+}
+function checkWaveComplete(){
+  if(enemiesRemaining<=0 && waveActive){
+    waveActive=false;
+    wave++;
+    setTimeout(()=>{ startWave(wave); },2000);
+  }
+}
+
+/******************************************************************************
+ * COLLISIONS
+ ******************************************************************************/
+function isWall(cx,cy){
+  if(cx<0||cy<0||cx>=MAP_W||cy>=MAP_H) return true;
+  return (MAP[cy][cx]!==0);
+}
+
+/******************************************************************************
+ * UPDATE
+ ******************************************************************************/
+function movePlayer(){
+  if(keys['w']||keys['ArrowUp']){
+    let nx=playerX+Math.cos(playerAngle)*SPEED;
+    let ny=playerY+Math.sin(playerAngle)*SPEED;
+    if(!isWall((nx/TILE_SIZE)|0,(ny/TILE_SIZE)|0)){ playerX=nx; playerY=ny; }
+  }
+  if(keys['s']||keys['ArrowDown']){
+    let nx=playerX-Math.cos(playerAngle)*SPEED;
+    let ny=playerY-Math.sin(playerAngle)*SPEED;
+    if(!isWall((nx/TILE_SIZE)|0,(ny/TILE_SIZE)|0)){ playerX=nx; playerY=ny; }
+  }
+  if(keys['a']) playerAngle-=TURN_SPEED;
+  if(keys['d']) playerAngle+=TURN_SPEED;
+  if(keys['ArrowLeft']) playerAngle-=TURN_SPEED;
+  if(keys['ArrowRight']) playerAngle+=TURN_SPEED;
+}
+function updateEnemies(){
+  enemies.forEach(e=>{
+    if(e.dead)return;
+    let ang=Math.atan2(playerY-e.y, playerX-e.x);
+    let nx=e.x+Math.cos(ang)*ENEMY_SPEED;
+    let ny=e.y+Math.sin(ang)*ENEMY_SPEED;
+    if(!isWall((nx/TILE_SIZE)|0,(ny/TILE_SIZE)|0)){ e.x=nx; e.y=ny; }
+    let d=dist2d(playerX,playerY,e.x,e.y);
+    if(d<ENEMY_SIZE){
+      playerHealth-=0.1*ENEMY_DAMAGE;
+      if(playerHealth<=0){ playerHealth=0; showGameOver(); }
+    }
+  });
+}
+function updatePickups(){
+  for(let i=0;i<pickups.length;i++){
+    let p=pickups[i];
+    let d=dist2d(playerX,playerY,p.x,p.y);
+    if(d<(PICKUP_SIZE+10)){
+      if(p.type==='health') playerHealth=clamp(playerHealth+30,0,100);
+      else if(p.type==='ammo') ammo+=15;
+      pickups.splice(i,1); i--;
+    }
+  }
+}
+function shoot(){
+  if(ammo<=0)return;
+  ammo--;
+  let shotRange=400; let closest=null; let cDist=1e9;
+  enemies.forEach(e=>{
+    if(e.dead)return;
+    let a=Math.atan2(e.y-playerY,e.x-playerX)-playerAngle;
+    a=(a+2*Math.PI)%(2*Math.PI); if(a>Math.PI)a-=2*Math.PI;
+    if(Math.abs(a)<0.17){
+      let d=dist2d(playerX,playerY,e.x,e.y);
+      if(d<shotRange && d<cDist){ cDist=d; closest=e; }
+    }
+  });
+  if(closest){
+    closest.health-=25;
+    if(closest.health<=0){
+      closest.dead=true; kills++; enemiesRemaining--; checkWaveComplete();
+    }
+  }
+}
+
+/******************************************************************************
+ * RAYCAST
+ ******************************************************************************/
+function castRays(){
+  wallStrips=[];
+  let startAngle=playerAngle-FOV/2;
+  let step=FOV/NUM_RAYS;
+  for(let i=0;i<NUM_RAYS;i++){
+    let ra=startAngle+i*step;
+    if(ra<0) ra+=2*Math.PI; if(ra>2*Math.PI) ra-=2*Math.PI;
+    let dist=0, hit=false, tex=1;
+    let sin=Math.sin(ra), cos=Math.cos(ra);
+    let rx=playerX, ry=playerY;
+    while(!hit&&dist<2000){
+      rx+=cos; ry+=sin; dist++;
+      let mx=(rx/TILE_SIZE)|0; let my=(ry/TILE_SIZE)|0;
+      if(mx<0||my<0||mx>=MAP_W||my>=MAP_H){ hit=true; dist=2000; }
+      else if(MAP[my][mx]!==0){ hit=true; tex=MAP[my][mx]; }
+    }
+    let diff=ra-playerAngle; if(diff<-Math.PI) diff+=2*Math.PI; if(diff>Math.PI) diff-=2*Math.PI;
+    dist=fixFishEye(dist,diff);
+    wallStrips.push({dist,texture:tex});
+  }
+}
+
+/******************************************************************************
+ * RENDER HELPERS
+ ******************************************************************************/
+function drawGunFrame(ctx,x,y,w,h,frame){
+  // We'll manually draw a "gun" shape with canvas
+  // frame=0 => idle, 1 => partial muzzle, 2 => bigger muzzle
+  // background
+  ctx.fillStyle='#333'; 
+  ctx.fillRect(x,y,w,h);
+  // "striped" pattern on top
+  for(let i=0;i<w;i+=8){
+    ctx.fillStyle=(i%16===0)?'#111':'#555';
+    ctx.fillRect(x+i,y,8,h);
+  }
+  // muzzle flash
+  if(frame>0){
+    let muzzleX=x+w-30;
+    let muzzleY=y+Math.random()*10+10;
+    let muzzleW=(frame===2)?20:10;
+    let muzzleH=(frame===2)?10:6;
+    ctx.fillStyle='yellow';
+    ctx.fillRect(muzzleX,muzzleY,muzzleW,muzzleH);
+  }
+}
+function drawEnemySprite(ctx,x,y,size,hp){
+  // we'll draw a pink rectangle with eyes
+  // if hp<25 => slightly red overlay
+  ctx.save();
+  if(hp<25){ ctx.fillStyle='rgba(255,0,0,0.3)'; ctx.fillRect(x,y,size,size); }
+  ctx.restore();
+  ctx.fillStyle='pink';
+  ctx.fillRect(x,y,size,size);
+  // eyes
+  ctx.fillStyle='black';
+  ctx.beginPath();
+  ctx.arc(x+size*0.3,y+size*0.3, size*0.1, 0,2*Math.PI);
+  ctx.arc(x+size*0.7,y+size*0.3, size*0.1, 0,2*Math.PI);
+  ctx.fill();
+  // mouth
+  ctx.fillStyle='red';
+  ctx.beginPath();
+  ctx.moveTo(x+size*0.25,y+size*0.6);
+  ctx.quadraticCurveTo(x+size*0.5,y+size*0.8, x+size*0.75,y+size*0.6);
+  ctx.fill();
+}
+function drawPickupSprite(ctx,x,y,size,type){
+  // type=health => green cross, type=ammo => gray box
+  if(type==='health'){
+    ctx.fillStyle='#0b0';
+    ctx.fillRect(x,y,size,size);
+    ctx.fillStyle='#fff';
+    ctx.fillRect(x+size*0.25,y+size*0.45,size*0.5,size*0.1);
+    ctx.fillRect(x+size*0.45,y+size*0.25,size*0.1,size*0.5);
+  } else {
+    ctx.fillStyle='#666';
+    ctx.fillRect(x,y,size,size);
+    ctx.fillStyle='#aaa';
+    ctx.fillRect(x+size*0.15,y+size*0.3,size*0.7,size*0.4);
+  }
+}
+
+/******************************************************************************
+ * RENDER SCENE
+ ******************************************************************************/
+function renderScene(ctx,W,H){
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#334'; ctx.fillRect(0,0,W,H/2);
+  ctx.fillStyle='#111'; ctx.fillRect(0,H/2,W,H/2);
+
+  let stripW=W/NUM_RAYS;
+  for(let i=0;i<NUM_RAYS;i++){
+    let d=wallStrips[i].dist;
+    let t=wallStrips[i].texture;
+    let hProj=(TILE_SIZE*277)/d;
+    let top=(H/2)-(hProj/2); if(top<0) top=0;
+    let shade=1-(d/1200); if(shade<0.1)shade=0.1;
+    ctx.save();
+    ctx.globalAlpha=shade;
+    // color depends on t
+    ctx.fillStyle=(t===2)?'#223355':'brown';
+    ctx.fillRect(i*stripW, top, stripW+1, hProj);
+    ctx.restore();
+  }
+
+  // Draw enemies (farthest first)
+  let sortedEnemies=[...enemies].sort((a,b)=>dist2d(playerX,playerY,b.x,b.y)-dist2d(playerX,playerY,a.x,a.y));
+  sortedEnemies.forEach(e=>{
+    if(e.dead)return;
+    let a=Math.atan2(e.y-playerY,e.x-playerX)-playerAngle;
+    a=(a+2*Math.PI)%(2*Math.PI); if(a>Math.PI)a-=2*Math.PI;
+    let dist=dist2d(playerX,playerY,e.x,e.y);
+    if(Math.abs(a)<FOV/2+0.5){
+      dist=fixFishEye(dist,a);
+      let sH=(TILE_SIZE*300)/dist;
+      let sW=sH;
+      let center=(W/2)-(sW/2);
+      let anglePers=(a/(FOV/2));
+      let sx=center+(center*anglePers*-1);
+      let sy=(H/2)-(sH/2);
+      if(sy<0) sy=0;
+      let alpha=1-(dist/800); if(alpha<0.2)alpha=0.2;
+      ctx.save();
+      ctx.globalAlpha=alpha;
+      drawEnemySprite(ctx,sx,sy,sW,e.health);
+      ctx.restore();
+    }
+  });
+
+  // Draw pickups
+  let sortedPickups=[...pickups].sort((a,b)=>dist2d(playerX,playerY,b.x,b.y)-dist2d(playerX,playerY,a.x,a.y));
+  sortedPickups.forEach(p=>{
+    let a=Math.atan2(p.y-playerY,p.x-playerX)-playerAngle;
+    a=(a+2*Math.PI)%(2*Math.PI); if(a>Math.PI)a-=2*Math.PI;
+    let dist=dist2d(playerX,playerY,p.x,p.y);
+    if(Math.abs(a)<FOV/2+0.5){
+      dist=fixFishEye(dist,a);
+      let sH=(TILE_SIZE*200)/dist;
+      let sW=sH;
+      let center=(W/2)-(sW/2);
+      let anglePers=(a/(FOV/2));
+      let sx=center+(center*anglePers*-1);
+      let sy=(H/2)-(sH/2);
+      let alpha=1-(dist/600); if(alpha<0.2)alpha=0.2;
+      ctx.save();
+      ctx.globalAlpha=alpha;
+      drawPickupSprite(ctx,sx,sy,sW,p.type);
+      ctx.restore();
+    }
+  });
+
+  // Gun
+  let gunW=160, gunH=60;
+  let gunX=(W-gunW)/2;
+  let gunY=H-gunH;
+  if(isShooting) gunY+=3;
+  drawGunFrame(ctx, gunX, gunY, gunW, gunH, gunFrame);
+
+  // Muzzle flash overlay
+  if(isShooting){
+    ctx.fillStyle='rgba(255,255,255,0.1)';
+    ctx.fillRect(0,0,W,H);
+  }
+}
+
+/******************************************************************************
+ * MINIMAP
+ ******************************************************************************/
+function drawMinimap(){
+  let mm=document.getElementById('minimap');
+  let mctx=mm.getContext('2d');
+  let scale=mm.width/(MAP_W*TILE_SIZE);
+  mctx.clearRect(0,0,mm.width,mm.height);
+  for(let y=0;y<MAP_H;y++){
+    for(let x=0;x<MAP_W;x++){
+      if(MAP[y][x]===1) mctx.fillStyle='#800';
+      else if(MAP[y][x]===2) mctx.fillStyle='#224';
+      else mctx.fillStyle='#111';
+      mctx.fillRect(x*TILE_SIZE*scale, y*TILE_SIZE*scale, TILE_SIZE*scale, TILE_SIZE*scale);
+    }
+  }
+  // pickups
+  pickups.forEach(p=>{
+    mctx.fillStyle=(p.type==='health')?'#0f0':'#ccc';
+    let px=p.x*scale, py=p.y*scale;
+    mctx.fillRect(px-2,py-2,4,4);
+  });
+  // enemies
+  enemies.forEach(e=>{
+    if(e.dead)return;
+    mctx.fillStyle='pink';
+    let ex=e.x*scale, ey=e.y*scale;
+    mctx.beginPath();
+    mctx.arc(ex,ey,4,0,2*Math.PI);
+    mctx.fill();
+  });
+  // player
+  mctx.fillStyle='lime';
+  mctx.beginPath();
+  mctx.arc(playerX*scale,playerY*scale,5,0,2*Math.PI);
+  mctx.fill();
+  // direction
+  let dirX=Math.cos(playerAngle)*10, dirY=Math.sin(playerAngle)*10;
+  mctx.strokeStyle='#0f0';
+  mctx.beginPath();
+  mctx.moveTo(playerX*scale,playerY*scale);
+  mctx.lineTo(playerX*scale+dirX, playerY*scale+dirY);
+  mctx.stroke();
+}
+
+/******************************************************************************
+ * UI
+ ******************************************************************************/
+function updateUI(){
+  let hb=document.getElementById('healthBar');
+  hb.style.width=clamp(playerHealth,0,100)+'%';
+  document.getElementById('status').textContent=
+    'Health: '+Math.floor(playerHealth)+' | Ammo: '+ammo+' | Kills: '+kills;
+}
+function showGameOver(){ document.getElementById('gameOverScreen').style.display='flex'; }
+function hideGameOver(){ document.getElementById('gameOverScreen').style.display='none'; }
+
+/******************************************************************************
+ * MAIN LOOP
+ ******************************************************************************/
+function gameLoop(){
+  movePlayer();
+  updateEnemies();
+  updatePickups();
+  if(shootCooldown>0){
+    shootCooldown--;
+    let frameIndex=2-Math.floor(shootCooldown/5);
+    gunFrame=SHOOT_FRAMES[frameIndex]||0;
+    if(shootCooldown===0){ isShooting=false; gunFrame=0; }
+  }
+  castRays();
+  let c=document.getElementById('gameCanvas');
+  let ctx=c.getContext('2d');
+  renderScene(ctx,c.width,c.height);
+  drawMinimap();
+  updateUI();
+  requestAnimationFrame(gameLoop);
+}
+
+/******************************************************************************
+ * EVENT HANDLERS
+ ******************************************************************************/
+window.addEventListener('keydown', e=>{
+  keys[e.key]=true;
+  if(e.key===' ' && shootCooldown===0 && playerHealth>0){
+    if(ammo>0){
+      isShooting=true; shootCooldown=15; shoot();
+      gunFrame=1;
+      e.preventDefault();
+    }
+  }
+  if((e.key==='r'||e.key==='R') && playerHealth<=0){
+    restartGame();
+  }
+});
+window.addEventListener('keyup', e=>{ keys[e.key]=false; });
+
+function restartGame(){
+  hideGameOver();
+  playerX=3.5*TILE_SIZE; playerY=3.5*TILE_SIZE;
+  playerAngle=0; playerHealth=100; kills=0; ammo=50; wave=1; waveActive=false;
+  initMap();
+  startWave(wave);
+}
+
+/******************************************************************************
+ * INIT
+ ******************************************************************************/
+function init(){
+  waveDisplayEl=document.getElementById('waveDisplay');
+  initMap();
+  startWave(wave);
+  requestAnimationFrame(gameLoop);
+}
+init();
+</script>
+
+</body>
+</html>

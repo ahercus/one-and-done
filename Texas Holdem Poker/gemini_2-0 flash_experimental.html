@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>One and Done Texas Hold'em</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #228B22; /* Forest Green */
+            color: white;
+        }
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background-color: #336033; /* Darker Green */
+            border-radius: 10px;
+            width: 90%;
+            max-width: 800px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+        #board {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+       .card {
+            width: 60px;
+            height: 90px;
+            border: 1px solid #ddd;
+            background-color: white;
+            color: black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 5px;
+            font-size: 1.2em;
+            position: relative;
+        }
+         .card.hidden{
+            background-color: #bbb;
+             color:transparent;
+        }
+        .card::before{
+           position: absolute;
+            top: 0;
+            left: 0;
+            content: '';
+            width: 10px;
+            height:10px;
+            border-radius:50%;
+             background-color: #aaa;
+        }
+        .card::after{
+           position: absolute;
+            bottom: 0;
+            right: 0;
+             content: '';
+           width: 10px;
+            height:10px;
+            border-radius:50%;
+             background-color: #aaa;
+        }
+        #player-hand, #opponent-hand {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        #actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 15px;
+            cursor: pointer;
+             background-color: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        #log {
+            border: 1px solid #ddd;
+            padding: 10px;
+            height: 150px;
+            overflow-y: scroll;
+            margin-top: 10px;
+            background-color: #f0f0f0;
+            color: #333;
+        }
+        #pot-display {
+            font-size: 1.2em;
+            margin-bottom: 10px;
+        }
+        #player-money, #opponent-money{
+          font-size: 1em;
+           margin-bottom: 10px;
+        }
+
+        #info{
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <h1>Texas Hold'em</h1>
+         <div id="info">
+            <div id="player-money">Player Money: 1000</div>
+             <div id="opponent-money">Opponent Money: 1000</div>
+             <div id="pot-display">Pot: 0</div>
+         </div>
+
+        <div id="board"></div>
+        <div id="player-hand"></div>
+        <div id="opponent-hand"></div>
+        <div id="actions">
+            <button onclick="playerCheck()">Check</button>
+             <button onclick="playerBet(10)">Bet 10</button>
+            <button onclick="playerBet(50)">Bet 50</button>
+            <button onclick="playerBet(100)">Bet 100</button>
+            <button onclick="playerFold()">Fold</button>
+
+        </div>
+        <div id="log"></div>
+
+    </div>
+
+    <script>
+        // Game Data
+        const suits = ["H", "D", "C", "S"];
+        const ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
+        let deck = [];
+        let board = [];
+        let playerHand = [];
+        let opponentHand = [];
+        let pot = 0;
+        let playerMoney = 1000;
+        let opponentMoney = 1000;
+        let currentBet = 0;
+        let gameStage = 'preflop'; // preflop, flop, turn, river
+       let lastAction = null;
+         let gameOver = false;
+
+
+        function createDeck() {
+             deck = [];
+            for (let suit of suits) {
+                for (let rank of ranks) {
+                    deck.push({ suit: suit, rank: rank });
+                }
+            }
+              shuffleDeck();
+        }
+
+         function shuffleDeck() {
+            for (let i = deck.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [deck[i], deck[j]] = [deck[j], deck[i]];
+            }
+        }
+
+        function dealCard() {
+            return deck.pop();
+        }
+
+        function dealHands() {
+             playerHand = [dealCard(), dealCard()];
+             opponentHand = [dealCard(), dealCard()];
+        }
+
+        function dealFlop() {
+           board = [dealCard(), dealCard(), dealCard()];
+           gameStage = 'flop';
+        }
+       function dealTurn() {
+            board.push(dealCard());
+           gameStage = 'turn';
+        }
+       function dealRiver() {
+           board.push(dealCard());
+            gameStage = 'river';
+        }
+
+      function updateBoard(){
+            const boardContainer = document.getElementById('board');
+            boardContainer.innerHTML = '';
+
+            board.forEach(card => {
+                 const cardDiv = document.createElement('div');
+                 cardDiv.classList.add('card');
+                  cardDiv.textContent = card.rank + card.suit;
+                boardContainer.appendChild(cardDiv);
+            });
+
+           if(board.length < 5){
+              for(let i = board.length; i< 5; i++){
+                  const cardDiv = document.createElement('div');
+                    cardDiv.classList.add('card','hidden');
+                    boardContainer.appendChild(cardDiv);
+                }
+           }
+      }
+
+
+      function updatePlayerHand(){
+           const playerHandContainer = document.getElementById('player-hand');
+            playerHandContainer.innerHTML = '';
+
+            playerHand.forEach(card => {
+                 const cardDiv = document.createElement('div');
+                 cardDiv.classList.add('card');
+                  cardDiv.textContent = card.rank + card.suit;
+                playerHandContainer.appendChild(cardDiv);
+            });
+      }
+
+       function updateOpponentHand(){
+           const opponentHandContainer = document.getElementById('opponent-hand');
+            opponentHandContainer.innerHTML = '';
+
+           opponentHand.forEach(card => {
+                 const cardDiv = document.createElement('div');
+                 cardDiv.classList.add('card','hidden'); //hide opponents cards
+                 opponentHandContainer.appendChild(cardDiv);
+            });
+
+             if(gameOver) {
+                 opponentHandContainer.innerHTML = '';
+                 opponentHand.forEach(card => {
+                    const cardDiv = document.createElement('div');
+                    cardDiv.classList.add('card');
+                     cardDiv.textContent = card.rank + card.suit;
+                     opponentHandContainer.appendChild(cardDiv);
+                 })
+             }
+      }
+
+        function logMessage(message) {
+            const log = document.getElementById('log');
+            const logEntry = document.createElement('p');
+            logEntry.textContent = message;
+            log.appendChild(logEntry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+         function updatePotDisplay(){
+            document.getElementById('pot-display').innerText = `Pot: ${pot}`;
+         }
+
+          function updatePlayerMoney(){
+              document.getElementById('player-money').innerText = `Player Money: ${playerMoney}`;
+         }
+         function updateOpponentMoney(){
+              document.getElementById('opponent-money').innerText = `Opponent Money: ${opponentMoney}`;
+         }
+
+
+         function playerCheck(){
+           if(lastAction === 'playerBet'){
+             logMessage("You cannot check after betting")
+             return;
+           }
+            logMessage("Player checks.");
+            lastAction = 'playerCheck';
+           opponentTurn();
+         }
+
+         function playerBet(amount){
+              if(playerMoney < amount){
+                logMessage("You do not have enough money to bet this amount");
+                 return;
+               }
+              logMessage(`Player bets ${amount}`);
+              currentBet = amount;
+             playerMoney -= amount;
+               pot += amount;
+              lastAction = 'playerBet';
+               updatePotDisplay();
+               updatePlayerMoney();
+             opponentTurn();
+        }
+
+         function playerFold(){
+           logMessage("Player folds. Opponent Wins");
+           opponentMoney += pot;
+           pot=0;
+           updatePotDisplay();
+           updateOpponentMoney();
+           resetGame();
+        }
+
+
+       function opponentTurn() {
+         setTimeout(() => {
+            let opponentAction = decideOpponentAction();
+
+          if(opponentAction === 'check') {
+            logMessage("Opponent checks");
+             if(lastAction === 'opponentBet'){
+              logMessage("Opponent cannot check after betting");
+               return;
+            }
+               lastAction = 'opponentCheck';
+
+          } else if(opponentAction === 'call') {
+              logMessage("Opponent calls");
+              opponentMoney -= currentBet;
+              pot += currentBet;
+               lastAction = 'opponentCall'
+              updatePotDisplay();
+                updateOpponentMoney();
+            }else if (opponentAction === 'bet') {
+                 let betAmount = Math.min(opponentMoney, Math.floor(Math.random() * 100 + 20));
+                logMessage(`Opponent bets ${betAmount}`);
+                opponentMoney -= betAmount;
+                pot += betAmount
+               currentBet = betAmount;
+                 lastAction = 'opponentBet';
+                 updatePotDisplay();
+                   updateOpponentMoney();
+                } else if(opponentAction === 'fold'){
+                logMessage("Opponent folds. Player Wins");
+                 playerMoney += pot;
+                pot=0;
+                updatePotDisplay();
+                updatePlayerMoney();
+                resetGame();
+                return;
+            }
+           advanceGameStage();
+
+            }, 1000); // Opponent action after a small delay
+
+        }
+
+     function decideOpponentAction() {
+          // Implement basic AI logic (e.g., random decision, check if has a good hand, etc.)
+        // In this simple example, the opponent will have a 50/50 chance to check, call or bet, and may fold if its very weak hand.
+
+         if(gameStage === 'river' && checkHandStrength(opponentHand,board) < 3 ){
+          return 'fold'
+        }
+
+         let randomChoice = Math.random();
+         if (randomChoice < 0.25) {
+            return 'check';
+         } else if (randomChoice < 0.50) {
+              return 'call';
+         } else {
+            return 'bet';
+        }
+
+      }
+       function advanceGameStage(){
+
+              if(gameStage === 'preflop'){
+                 dealFlop();
+              } else if (gameStage === 'flop'){
+                dealTurn();
+              } else if (gameStage === 'turn'){
+                 dealRiver();
+              } else if(gameStage === 'river'){
+                  endHand();
+                return;
+            }
+          updateBoard();
+          updateOpponentHand();
+       }
+
+      function endHand(){
+            let playerStrength = checkHandStrength(playerHand, board);
+             let opponentStrength = checkHandStrength(opponentHand, board);
+
+           gameOver = true;
+
+          updateOpponentHand(); //show opponents hand
+             if (playerStrength > opponentStrength) {
+              logMessage("Player wins the hand!");
+              playerMoney += pot;
+               pot = 0;
+             } else if (opponentStrength > playerStrength) {
+                logMessage("Opponent wins the hand!");
+                opponentMoney += pot;
+                pot = 0;
+            } else {
+                logMessage("It's a tie! Split the pot.");
+                playerMoney += pot/2;
+                opponentMoney += pot/2;
+                 pot = 0;
+
+            }
+           updatePotDisplay();
+           updateOpponentMoney();
+           updatePlayerMoney();
+         resetGame();
+        }
+
+
+     function checkHandStrength(hand, board) {
+        // Combine player's hand and the board cards
+        const allCards = hand.concat(board);
+        const ranks = allCards.map(card => card.rank);
+
+         const rankCounts = {};
+          for (const rank of ranks) {
+              rankCounts[rank] = (rankCounts[rank] || 0) + 1;
+          }
+         const counts = Object.values(rankCounts);
+
+          if(counts.includes(4)){
+               return 7; // Four of a kind
+          } else if (counts.includes(3) && counts.includes(2)){
+                return 6; //full house
+           } else if (counts.includes(3)){
+                return 4; // three of a kind
+           } else if (counts.filter(x=> x === 2).length === 2){
+                 return 3; // two pair
+           } else if (counts.includes(2)){
+                 return 2; // one pair
+           } else {
+                return 1; // high card
+           }
+       }
+
+
+
+        function resetGame() {
+           if(playerMoney <= 0){
+             logMessage("Game Over. Opponent Wins!");
+             return;
+            } else if(opponentMoney <=0){
+               logMessage("Game Over. You Win!");
+              return;
+            }
+
+           setTimeout(()=>{
+             gameOver = false;
+             deck = [];
+             board = [];
+             playerHand = [];
+             opponentHand = [];
+             pot = 0;
+              currentBet = 0;
+               gameStage = 'preflop';
+             createDeck();
+             dealHands();
+             updateBoard();
+             updatePlayerHand();
+             updateOpponentHand();
+            updatePotDisplay();
+             logMessage("New hand started.");
+          }, 2000) //Delay before reset
+        }
+
+        // Start the game
+        createDeck();
+        dealHands();
+        updateBoard();
+        updatePlayerHand();
+        updateOpponentHand();
+         updatePotDisplay();
+          updateOpponentMoney();
+          updatePlayerMoney();
+    </script>
+
+</body>
+</html>
