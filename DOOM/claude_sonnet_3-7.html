@@ -1,0 +1,1590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOOM Recreation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body {
+            overflow: hidden;
+            background-color: #000;
+            font-family: monospace;
+            color: #fff;
+        }
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        #game-canvas {
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            image-rendering: pixelated;
+        }
+        #weapon-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 320px;
+            height: 240px;
+            pointer-events: none;
+        }
+        #ui-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 50px;
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .ui-group {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .health-bar, .ammo-bar {
+            width: 150px;
+            height: 15px;
+            border: 2px solid #fff;
+            position: relative;
+        }
+        .health-bar::after, .ammo-bar::after {
+            content: '';
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            transition: width 0.2s;
+        }
+        .health-bar::after {
+            background-color: #00ff00;
+            width: 100%;
+        }
+        .ammo-bar::after {
+            background-color: #ffff00;
+            width: 100%;
+        }
+        #minimap {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            border: 1px solid #fff;
+        }
+        #fps-counter {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 5px;
+            font-size: 14px;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(255, 0, 0, 0.7);
+            font-size: 20px;
+        }
+        #game-over {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #ff0000;
+            font-size: 48px;
+            display: none;
+        }
+        #restart-btn {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background-color: #ff0000;
+            color: #fff;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+        }
+        #start-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        #title {
+            color: #ff0000;
+            font-size: 72px;
+            text-align: center;
+            margin-bottom: 40px;
+            text-shadow: 0 0 10px #ff0000;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { text-shadow: 0 0 10px #ff0000; }
+            50% { text-shadow: 0 0 20px #ff0000, 0 0 30px #ff0000; }
+            100% { text-shadow: 0 0 10px #ff0000; }
+        }
+        #start-btn {
+            padding: 15px 30px;
+            background-color: #ff0000;
+            color: #fff;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+        }
+        #controls {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 18px;
+        }
+        .flash {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 0, 0, 0.3);
+            display: none;
+            pointer-events: none;
+        }
+        #level-complete {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            font-size: 36px;
+            padding: 20px;
+            display: none;
+            text-align: center;
+        }
+        #next-level-btn {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background-color: #00ff00;
+            color: #000;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        <div id="weapon-overlay"></div>
+        <div id="ui-overlay">
+            <div class="ui-group">
+                <div>HEALTH: <span id="health-value">100</span>%</div>
+                <div class="health-bar"></div>
+            </div>
+            <div class="ui-group">
+                <div>AMMO: <span id="ammo-value">50</span></div>
+                <div class="ammo-bar"></div>
+            </div>
+            <div class="ui-group">
+                <div>KILLS: <span id="kills-value">0</span></div>
+                <div>LEVEL: <span id="level-value">1</span></div>
+            </div>
+        </div>
+        <canvas id="minimap" width="150" height="150"></canvas>
+        <div id="fps-counter">FPS: 0</div>
+        <div id="crosshair">+</div>
+        <div class="flash" id="damage-flash"></div>
+        <div id="game-over">
+            <div>GAME OVER</div>
+            <button id="restart-btn">RESTART</button>
+        </div>
+        <div id="level-complete">
+            <div>LEVEL COMPLETE!</div>
+            <div>ENEMIES KILLED: <span id="level-kills">0</span></div>
+            <button id="next-level-btn">NEXT LEVEL</button>
+        </div>
+        <div id="start-screen">
+            <div id="title">DOOM</div>
+            <button id="start-btn">START GAME</button>
+            <div id="controls">
+                <p>WASD or ARROW KEYS to move</p>
+                <p>MOUSE to look around</p>
+                <p>LEFT CLICK to shoot</p>
+                <p>SHIFT to run</p>
+                <p>SPACE to open doors</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Game Configuration
+        const config = {
+            fov: 60,
+            resolution: 320,
+            textureSize: 64,
+            playerSpeed: 0.1,
+            playerTurnSpeed: 0.03,
+            playerRunMultiplier: 1.5,
+            maxHealth: 100,
+            maxAmmo: 50,
+            enemyDamage: 5,
+            enemyHealth: 20,
+            shootDamage: 10,
+            shootCooldown: 200
+        };
+
+        // Game State
+        const state = {
+            running: false,
+            player: {
+                x: 2,
+                y: 2,
+                direction: 0,
+                health: config.maxHealth,
+                ammo: config.maxAmmo,
+                lastShootTime: 0,
+                shooting: false,
+                weaponFrame: 0,
+                isMoving: false,
+                movingDirection: { x: 0, y: 0 },
+                bobPhase: 0,
+                height: 0.5,
+                isRunning: false
+            },
+            enemies: [],
+            bullets: [],
+            doors: [],
+            kills: 0,
+            level: 1,
+            currentMap: null,
+            lastTime: 0,
+            fps: 0,
+            frameCount: 0,
+            frameTime: 0,
+            keyState: {},
+            mouseX: 0,
+            mouseY: 0,
+            shake: { intensity: 0, duration: 0, startTime: 0 },
+            levelComplete: false
+        };
+
+        // Game Elements
+        const gameCanvas = document.getElementById('game-canvas');
+        const weaponOverlay = document.getElementById('weapon-overlay');
+        const minimapCanvas = document.getElementById('minimap');
+        const fpsCounter = document.getElementById('fps-counter');
+        const healthValue = document.getElementById('health-value');
+        const ammoValue = document.getElementById('ammo-value');
+        const killsValue = document.getElementById('kills-value');
+        const levelValue = document.getElementById('level-value');
+        const healthBar = document.querySelector('.health-bar');
+        const ammoBar = document.querySelector('.ammo-bar');
+        const damageFlash = document.getElementById('damage-flash');
+        const gameOver = document.getElementById('game-over');
+        const restartBtn = document.getElementById('restart-btn');
+        const startScreen = document.getElementById('start-screen');
+        const startBtn = document.getElementById('start-btn');
+        const levelComplete = document.getElementById('level-complete');
+        const levelKills = document.getElementById('level-kills');
+        const nextLevelBtn = document.getElementById('next-level-btn');
+
+        // Set up canvas context
+        const ctx = gameCanvas.getContext('2d');
+        const minimapCtx = minimapCanvas.getContext('2d');
+
+        // Resize canvas to window size
+        function resizeCanvas() {
+            gameCanvas.width = window.innerWidth;
+            gameCanvas.height = window.innerHeight;
+        }
+        
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Generate weapon SVG
+        function generateWeaponSVG() {
+            const weaponSVG = `
+                <svg width="320" height="240" viewBox="0 0 320 240" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Gun -->
+                    <g transform="translate(130, ${160 + Math.sin(state.player.bobPhase) * 5})">
+                        <path d="M30 60 L90 60 L100 40 L60 40 Z" fill="#555" />
+                        <rect x="40" y="30" width="50" height="10" fill="#777" />
+                        <rect x="0" y="45" width="60" height="15" fill="#333" />
+                        ${state.player.shooting ? `
+                            <circle cx="70" cy="35" r="${Math.random() * 5 + 8}" fill="#ff6" />
+                            <circle cx="70" cy="35" r="${Math.random() * 3 + 4}" fill="#f00" />
+                        ` : ''}
+                    </g>
+                </svg>
+            `;
+            weaponOverlay.innerHTML = weaponSVG;
+        }
+
+        // Map definitions
+        const maps = [
+            // Level 1: Simple maze
+            [
+                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,1,1,1,1,0,0,1,1,1,0,0,0,1],
+                [1,0,0,1,0,0,0,0,0,0,0,1,0,0,0,1],
+                [1,0,0,1,0,0,0,0,0,0,0,1,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,1,0,1,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,1,0,2,0,0,0,1],
+                [1,0,0,1,0,1,1,1,1,1,0,1,0,0,0,1],
+                [1,0,0,1,0,0,0,0,0,0,0,1,0,0,0,1],
+                [1,0,0,1,0,0,0,0,0,0,0,1,0,0,0,1],
+                [1,0,0,1,1,1,2,1,1,1,1,1,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+            ],
+            // Level 2: More complex layout with more enemies
+            [
+                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,2,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,1,0,0,1,1,1,1,0,0,1],
+                [1,1,1,2,1,1,1,0,0,1,0,0,1,0,0,1],
+                [1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,1],
+                [1,0,0,0,0,0,0,0,0,1,0,0,1,0,0,1],
+                [1,0,0,1,1,1,1,1,1,1,0,0,2,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1],
+                [1,1,1,1,1,2,1,1,1,1,1,1,1,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+            ],
+            // Level 3: More enemies, more complex maze
+            [
+                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                [1,0,0,0,1,0,0,0,0,0,0,0,1,0,0,1],
+                [1,0,0,0,1,0,0,0,0,0,0,0,1,0,0,1],
+                [1,0,0,0,1,0,0,1,1,1,2,1,1,0,0,1],
+                [1,0,0,0,2,0,0,1,0,0,0,0,0,0,0,1],
+                [1,0,0,0,1,0,0,1,0,0,0,0,0,0,0,1],
+                [1,1,1,1,1,0,0,1,0,0,0,0,0,0,0,1],
+                [1,0,0,0,0,0,0,1,0,0,1,1,1,1,1,1],
+                [1,0,0,0,0,0,0,2,0,0,0,0,0,0,0,1],
+                [1,0,0,1,1,1,1,1,0,0,0,0,0,0,0,1],
+                [1,0,0,1,0,0,0,1,0,0,0,0,0,0,0,1],
+                [1,0,0,1,0,0,0,1,1,1,1,1,2,1,1,1],
+                [1,0,0,2,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1],
+                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+            ]
+        ];
+
+        // Enemy types
+        const enemyTypes = [
+            {
+                name: 'Imp',
+                color: '#8B0000',
+                speed: 0.03,
+                size: 0.5,
+                health: 20,
+                damage: 5,
+                attackRange: 0.5,
+                attackSpeed: 1500
+            },
+            {
+                name: 'Demon',
+                color: '#A52A2A',
+                speed: 0.04,
+                size: 0.6,
+                health: 30,
+                damage: 10,
+                attackRange: 0.6,
+                attackSpeed: 2000
+            },
+            {
+                name: 'Baron',
+                color: '#006400',
+                speed: 0.025,
+                size: 0.7,
+                health: 50,
+                damage: 15,
+                attackRange: 0.7,
+                attackSpeed: 2500
+            }
+        ];
+
+        // Texture generator
+        function generateTexture(type) {
+            const canvas = document.createElement('canvas');
+            canvas.width = config.textureSize;
+            canvas.height = config.textureSize;
+            const context = canvas.getContext('2d');
+            
+            if (type === 'wall') {
+                // Wall texture
+                context.fillStyle = '#555';
+                context.fillRect(0, 0, config.textureSize, config.textureSize);
+                
+                // Brick pattern
+                context.fillStyle = '#777';
+                for (let y = 0; y < config.textureSize; y += 16) {
+                    for (let x = 0; x < config.textureSize; x += 32) {
+                        context.fillRect(
+                            x + (y % 32 === 0 ? 0 : 16), 
+                            y, 
+                            14, 
+                            7
+                        );
+                    }
+                }
+            } else if (type === 'door') {
+                // Door texture
+                context.fillStyle = '#8B4513';
+                context.fillRect(0, 0, config.textureSize, config.textureSize);
+                
+                // Door details
+                context.fillStyle = '#A0522D';
+                context.fillRect(5, 5, config.textureSize - 10, config.textureSize - 10);
+                
+                // Door handle
+                context.fillStyle = '#FFD700';
+                context.beginPath();
+                context.arc(45, 32, 5, 0, Math.PI * 2);
+                context.fill();
+            }
+            
+            return canvas;
+        }
+
+        // Generate textures
+        const textures = {
+            wall: generateTexture('wall'),
+            door: generateTexture('door')
+        };
+
+        // Set up enemy spawn positions for current level
+        function spawnEnemies() {
+            state.enemies = [];
+            const mapWidth = state.currentMap[0].length;
+            const mapHeight = state.currentMap.length;
+            
+            // Number of enemies scales with level
+            const enemyCount = 5 + state.level * 2;
+            
+            for (let i = 0; i < enemyCount; i++) {
+                let x, y;
+                let validPosition = false;
+                
+                // Try to find a valid position for the enemy
+                while (!validPosition) {
+                    x = Math.floor(Math.random() * (mapWidth - 2)) + 1;
+                    y = Math.floor(Math.random() * (mapHeight - 2)) + 1;
+                    
+                    // Check if position is empty and not too close to player
+                    if (state.currentMap[y][x] === 0 && 
+                        (Math.abs(x - state.player.x) > 3 || Math.abs(y - state.player.y) > 3)) {
+                        validPosition = true;
+                    }
+                }
+                
+                // Select random enemy type with higher chance of tougher enemies in higher levels
+                const typeIndex = Math.min(
+                    Math.floor(Math.random() * (state.level + 1) / 2),
+                    enemyTypes.length - 1
+                );
+                
+                const enemyType = enemyTypes[typeIndex];
+                
+                state.enemies.push({
+                    x,
+                    y,
+                    type: enemyType,
+                    health: enemyType.health,
+                    lastAttack: 0,
+                    state: 'patrol',
+                    targetX: x,
+                    targetY: y,
+                    patrolPhase: Math.random() * Math.PI * 2
+                });
+            }
+        }
+
+        // Set up doors
+        function setupDoors() {
+            state.doors = [];
+            
+            // Find all door positions in the map (value 2)
+            for (let y = 0; y < state.currentMap.length; y++) {
+                for (let x = 0; x < state.currentMap[y].length; x++) {
+                    if (state.currentMap[y][x] === 2) {
+                        state.doors.push({
+                            x,
+                            y,
+                            open: false,
+                            openAmount: 0
+                        });
+                    }
+                }
+            }
+        }
+
+        // Load a level
+        function loadLevel(levelIndex) {
+            state.level = levelIndex + 1;
+            state.currentMap = JSON.parse(JSON.stringify(maps[levelIndex]));
+            state.player.x = 2;
+            state.player.y = 2;
+            state.player.direction = 0;
+            state.levelComplete = false;
+            levelValue.textContent = state.level;
+            
+            setupDoors();
+            spawnEnemies();
+        }
+
+        // Start game
+        function startGame() {
+            state.running = true;
+            state.player.health = config.maxHealth;
+            state.player.ammo = config.maxAmmo;
+            state.kills = 0;
+            state.level = 1;
+            
+            healthValue.textContent = state.player.health;
+            ammoValue.textContent = state.player.ammo;
+            killsValue.textContent = state.kills;
+            
+            loadLevel(0);
+            
+            startScreen.style.display = 'none';
+            gameCanvas.requestPointerLock = gameCanvas.requestPointerLock || gameCanvas.mozRequestPointerLock;
+            gameCanvas.requestPointerLock();
+            
+            // Start game loop
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Restart game
+        function restartGame() {
+            state.running = true;
+            state.player.health = config.maxHealth;
+            state.player.ammo = config.maxAmmo;
+            state.kills = 0;
+            state.level = 1;
+            
+            healthValue.textContent = state.player.health;
+            ammoValue.textContent = state.player.ammo;
+            killsValue.textContent = state.kills;
+            
+            loadLevel(0);
+            
+            gameOver.style.display = 'none';
+            gameCanvas.requestPointerLock();
+        }
+
+        // Next level
+        function nextLevel() {
+            if (state.level < maps.length) {
+                loadLevel(state.level);
+                levelComplete.style.display = 'none';
+                gameCanvas.requestPointerLock();
+            } else {
+                // Game complete
+                alert("Congratulations! You've completed all levels!");
+                restartGame();
+            }
+        }
+
+        // Draw minimap
+        function drawMinimap() {
+            const mapSize = 8;
+            const cellSize = minimapCanvas.width / mapSize;
+            
+            // Clear minimap
+            minimapCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            minimapCtx.fillRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+            
+            // Draw map walls
+            for (let y = 0; y < mapSize; y++) {
+                for (let x = 0; x < mapSize; x++) {
+                    const mapX = Math.floor(state.player.x) - Math.floor(mapSize / 2) + x;
+                    const mapY = Math.floor(state.player.y) - Math.floor(mapSize / 2) + y;
+                    
+                    if (mapX >= 0 && mapX < state.currentMap[0].length && 
+                        mapY >= 0 && mapY < state.currentMap.length) {
+                        if (state.currentMap[mapY][mapX] === 1) {
+                            minimapCtx.fillStyle = '#777';
+                            minimapCtx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+                        } else if (state.currentMap[mapY][mapX] === 2) {
+                            // Door
+                            const door = state.doors.find(d => d.x === mapX && d.y === mapY);
+                            if (door && door.open) {
+                                minimapCtx.fillStyle = 'rgba(139, 69, 19, 0.5)';
+                            } else {
+                                minimapCtx.fillStyle = 'rgb(139, 69, 19)';
+                            }
+                            minimapCtx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+                        }
+                    }
+                }
+            }
+            
+            // Draw enemies
+            for (const enemy of state.enemies) {
+                const enemyX = (enemy.x - state.player.x + mapSize / 2) * cellSize;
+                const enemyY = (enemy.y - state.player.y + mapSize / 2) * cellSize;
+                
+                if (enemyX >= 0 && enemyX < minimapCanvas.width && 
+                    enemyY >= 0 && enemyY < minimapCanvas.height) {
+                    minimapCtx.fillStyle = enemy.type.color;
+                    minimapCtx.beginPath();
+                    minimapCtx.arc(enemyX, enemyY, cellSize / 3, 0, Math.PI * 2);
+                    minimapCtx.fill();
+                }
+            }
+            
+            // Draw player
+            const playerX = mapSize / 2 * cellSize;
+            const playerY = mapSize / 2 * cellSize;
+            
+            minimapCtx.fillStyle = '#0f0';
+            minimapCtx.beginPath();
+            minimapCtx.arc(playerX, playerY, cellSize / 3, 0, Math.PI * 2);
+            minimapCtx.fill();
+            
+            // Draw player direction
+            minimapCtx.strokeStyle = '#0f0';
+            minimapCtx.lineWidth = 2;
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(playerX, playerY);
+            minimapCtx.lineTo(
+                playerX + Math.cos(state.player.direction) * cellSize,
+                playerY + Math.sin(state.player.direction) * cellSize
+            );
+            minimapCtx.stroke();
+        }
+
+        // Cast single ray
+        function castRay(angle) {
+            // Ray direction
+            const rayDirX = Math.cos(angle);
+            const rayDirY = Math.sin(angle);
+            
+            // Player position
+            const posX = state.player.x;
+            const posY = state.player.y;
+            
+            // Which map cell the player is in
+            let mapX = Math.floor(posX);
+            let mapY = Math.floor(posY);
+            
+            // Length of ray from current position to next x or y-side
+            let sideDistX;
+            let sideDistY;
+            
+            // Length of ray from one x or y-side to next x or y-side
+            const deltaDistX = Math.abs(1 / rayDirX);
+            const deltaDistY = Math.abs(1 / rayDirY);
+            
+            // What direction to step in (+1 or -1)
+            let stepX;
+            let stepY;
+            
+            // Was a wall hit
+            let hit = 0;
+            // Was a north/south or east/west wall hit
+            let side = 0;
+            
+            // Calculate step and initial sideDist
+            if (rayDirX < 0) {
+                stepX = -1;
+                sideDistX = (posX - mapX) * deltaDistX;
+            } else {
+                stepX = 1;
+                sideDistX = (mapX + 1.0 - posX) * deltaDistX;
+            }
+            
+            if (rayDirY < 0) {
+                stepY = -1;
+                sideDistY = (posY - mapY) * deltaDistY;
+            } else {
+                stepY = 1;
+                sideDistY = (mapY + 1.0 - posY) * deltaDistY;
+            }
+            
+            // Perform DDA
+            while (hit === 0) {
+                // Jump to next map square
+                if (sideDistX < sideDistY) {
+                    sideDistX += deltaDistX;
+                    mapX += stepX;
+                    side = 0;
+                } else {
+                    sideDistY += deltaDistY;
+                    mapY += stepY;
+                    side = 1;
+                }
+                
+                // Check if ray hit a wall
+                const mapValue = state.currentMap[mapY]?.[mapX];
+                if (mapValue === 1 || mapValue === 2) {
+                    // If hit a door, check if it's open
+                    if (mapValue === 2) {
+                        const door = state.doors.find(d => d.x === mapX && d.y === mapY);
+                        if (door && door.open && door.openAmount >= 1) {
+                            // Fully open door, continue ray
+                            continue;
+                        } else if (door && door.open && door.openAmount > 0) {
+                            // Partially open door
+                            const doorCenter = side === 0 ? mapX + 0.5 : mapY + 0.5;
+                            const playerToMapCenter = side === 0 ? posX - mapX : posY - mapY;
+                            const doorWidth = 1 - door.openAmount;
+                            
+                            if (Math.abs(playerToMapCenter - doorCenter) < doorWidth / 2) {
+                                hit = 1;
+                            } else {
+                                continue;
+                            }
+                        } else {
+                            hit = 1;
+                        }
+                    } else {
+                        hit = 1;
+                    }
+                }
+            }
+            
+            // Calculate distance projected on camera direction
+            let perpWallDist;
+            if (side === 0) {
+                perpWallDist = (mapX - posX + (1 - stepX) / 2) / rayDirX;
+            } else {
+                perpWallDist = (mapY - posY + (1 - stepY) / 2) / rayDirY;
+            }
+            
+            // Calculate wall texture
+            let wallX;
+            if (side === 0) {
+                wallX = posY + perpWallDist * rayDirY;
+            } else {
+                wallX = posX + perpWallDist * rayDirX;
+            }
+            wallX -= Math.floor(wallX);
+            
+            // X coordinate on the texture
+            let texX = Math.floor(wallX * config.textureSize);
+            if (side === 0 && rayDirX > 0) texX = config.textureSize - texX - 1;
+            if (side === 1 && rayDirY < 0) texX = config.textureSize - texX - 1;
+            
+            // Determine texture to use
+            const texType = state.currentMap[mapY][mapX] === 2 ? 'door' : 'wall';
+            
+            return {
+                distance: perpWallDist,
+                mapX,
+                mapY,
+                side,
+                texX,
+                texType
+            };
+        }
+
+        // Draw 3D view
+        function draw3DView() {
+            const width = gameCanvas.width;
+            const height = gameCanvas.height;
+            
+            // Clear canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, width, height);
+            
+            // Draw ceiling
+            const gradient = ctx.createLinearGradient(0, 0, 0, height / 2);
+            gradient.addColorStop(0, '#000');
+            gradient.addColorStop(1, '#222');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, width, height / 2);
+            
+            // Draw floor
+            const floorGradient = ctx.createLinearGradient(0, height / 2, 0, height);
+            floorGradient.addColorStop(0, '#444');
+            floorGradient.addColorStop(1, '#333');
+            ctx.fillStyle = floorGradient;
+            ctx.fillRect(0, height / 2, width, height / 2);
+            
+            // Camera shake effect
+            let shakeX = 0;
+            let shakeY = 0;
+            if (state.shake.duration > 0) {
+                const elapsedTime = performance.now() - state.shake.startTime;
+                if (elapsedTime < state.shake.duration) {
+                    const intensity = state.shake.intensity * (1 - elapsedTime / state.shake.duration);
+                    shakeX = (Math.random() * 2 - 1) * intensity;
+                    shakeY = (Math.random() * 2 - 1) * intensity;
+                } else {
+                    state.shake.duration = 0;
+                }
+            }
+            
+            // Get vertical position based on player height and bobbing
+            const verticalOffset = height * 0.1 * 
+                (1 - state.player.height) + 
+                Math.sin(state.player.bobPhase) * (state.player.isMoving ? 5 : 0);
+            
+            // Cast rays for each column on screen
+            for (let x = 0; x < width; x++) {
+                // Calculate ray position and direction
+                const cameraX = 2 * x / width - 1;
+                const rayAngle = state.player.direction + Math.atan(cameraX * Math.tan(config.fov * Math.PI / 180 / 2));
+                
+                // Cast ray
+                const ray = castRay(rayAngle);
+                
+                // Calculate height of line to draw on screen
+                const lineHeight = Math.floor(height / ray.distance);
+                
+                // Calculate lowest and highest pixel to fill in current stripe
+                let drawStart = -lineHeight / 2 + height / 2 + verticalOffset + shakeY;
+                if (drawStart < 0) drawStart = 0;
+                let drawEnd = lineHeight / 2 + height / 2 + verticalOffset + shakeY;
+                if (drawEnd >= height) drawEnd = height - 1;
+                
+                // Choose wall texture
+                const texture = textures[ray.texType];
+                
+                // Draw the texture
+                const stripHeight = drawEnd - drawStart;
+                const step = config.textureSize / stripHeight;
+                let texPos = 0;
+                
+                // Darken walls based on distance and side
+                const brightness = Math.min(1, 5 / ray.distance);
+                const sideBrightness = ray.side === 1 ? 0.7 : 1;
+                
+                // Draw texture in column
+                for (let y = drawStart; y < drawEnd; y++) {
+                    const texY = Math.floor(texPos);
+                    texPos += step;
+                    
+                    // Get texture pixel
+                    const texData = texture.getContext('2d').getImageData(ray.texX, texY, 1, 1).data;
+                    
+                    // Apply lighting
+                    const r = Math.floor(texData[0] * brightness * sideBrightness);
+                    const g = Math.floor(texData[1] * brightness * sideBrightness);
+                    const b = Math.floor(texData[2] * brightness * sideBrightness);
+                    
+                    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+                    ctx.fillRect(x + shakeX, y, 1, 1);
+                }
+            }
+            
+            // Draw enemies
+            drawEnemies();
+        }
+
+        // Draw enemies
+        function drawEnemies() {
+            const width = gameCanvas.width;
+            const height = gameCanvas.height;
+            
+            // Sort enemies by distance (painter's algorithm)
+            const sortedEnemies = [...state.enemies].sort((a, b) => {
+                const distA = Math.pow(a.x - state.player.x, 2) + Math.pow(a.y - state.player.y, 2);
+                const distB = Math.pow(b.x - state.player.x, 2) + Math.pow(b.y - state.player.y, 2);
+                return distB - distA;
+            });
+            
+            // Get vertical position based on player height and bobbing
+            const verticalOffset = height * 0.1 * 
+                (1 - state.player.height) + 
+                Math.sin(state.player.bobPhase) * (state.player.isMoving ? 5 : 0);
+            
+            // Draw each enemy
+            for (const enemy of sortedEnemies) {
+                // Direction to enemy relative to player
+                const enemyDirX = enemy.x - state.player.x;
+                const enemyDirY = enemy.y - state.player.y;
+                
+                // Distance to enemy
+                const distance = Math.sqrt(enemyDirX * enemyDirX + enemyDirY * enemyDirY);
+                
+                // Angle between player direction and enemy
+                const enemyAngle = Math.atan2(enemyDirY, enemyDirX);
+                let relativeAngle = enemyAngle - state.player.direction;
+                
+                // Normalize angle to -PI to PI range
+                while (relativeAngle > Math.PI) relativeAngle -= 2 * Math.PI;
+                while (relativeAngle < -Math.PI) relativeAngle += 2 * Math.PI;
+                
+                // Check if enemy is in view
+                const fovRadians = config.fov * Math.PI / 180;
+                if (Math.abs(relativeAngle) > fovRadians / 2) {
+                    continue;
+                }
+                
+                // Calculate screen position
+                const screenX = (relativeAngle / (fovRadians / 2) + 1) / 2 * width;
+                
+                // Calculate sprite size
+                const spriteSize = Math.min(height, Math.floor(height / distance * enemy.type.size * 2));
+                
+                // Calculate sprite drawing coordinates
+                const drawX = screenX - spriteSize / 2;
+                const drawY = height / 2 - spriteSize / 2 + verticalOffset;
+                
+                // Perform check if there's a wall between player and enemy
+                const rayToEnemy = castRay(enemyAngle);
+                if (rayToEnemy.distance < distance) {
+                    continue;
+                }
+                
+                // Draw enemy (simple colored rectangle for now)
+                const brightness = Math.min(1, 5 / distance);
+                const r = parseInt(enemy.type.color.slice(1, 3), 16);
+                const g = parseInt(enemy.type.color.slice(3, 5), 16);
+                const b = parseInt(enemy.type.color.slice(5, 7), 16);
+                
+                // Draw basic enemy shape
+                ctx.fillStyle = `rgba(${Math.floor(r * brightness)}, ${Math.floor(g * brightness)}, ${Math.floor(b * brightness)}, ${brightness})`;
+                ctx.fillRect(drawX, drawY, spriteSize, spriteSize);
+                
+                // Draw eyes
+                const eyeSize = spriteSize / 8;
+                const eyeY = drawY + spriteSize / 3;
+                ctx.fillStyle = 'rgba(255, 0, 0, ' + brightness + ')';
+                ctx.fillRect(drawX + spriteSize / 3 - eyeSize / 2, eyeY, eyeSize, eyeSize);
+                ctx.fillRect(drawX + spriteSize * 2/3 - eyeSize / 2, eyeY, eyeSize, eyeSize);
+                
+                // Draw mouth
+                const mouthY = drawY + spriteSize * 2/3;
+                ctx.fillRect(drawX + spriteSize / 4, mouthY, spriteSize / 2, eyeSize / 2);
+                
+                // Draw health bar if enemy is damaged
+                if (enemy.health < enemy.type.health) {
+                    const healthPercentage = enemy.health / enemy.type.health;
+                    const barWidth = spriteSize;
+                    const barHeight = spriteSize / 20;
+                    
+                    // Background
+                    ctx.fillStyle = 'rgba(0, 0, 0, ' + brightness + ')';
+                    ctx.fillRect(drawX, drawY - barHeight * 2, barWidth, barHeight);
+                    
+                    // Health
+                    ctx.fillStyle = 'rgba(255, 0, 0, ' + brightness + ')';
+                    ctx.fillRect(drawX, drawY - barHeight * 2, barWidth * healthPercentage, barHeight);
+                }
+            }
+        }
+
+        // Update player movement
+        function updatePlayerMovement(deltaTime) {
+            // Reset movement
+            state.player.isMoving = false;
+            state.player.movingDirection = { x: 0, y: 0 };
+            
+            // Handle keyboard input for movement
+            let moveX = 0;
+            let moveY = 0;
+            
+            if (state.keyState['KeyW'] || state.keyState['ArrowUp']) {
+                moveX += Math.cos(state.player.direction);
+                moveY += Math.sin(state.player.direction);
+                state.player.isMoving = true;
+            }
+            if (state.keyState['KeyS'] || state.keyState['ArrowDown']) {
+                moveX -= Math.cos(state.player.direction);
+                moveY -= Math.sin(state.player.direction);
+                state.player.isMoving = true;
+            }
+            if (state.keyState['KeyA'] || state.keyState['ArrowLeft']) {
+                moveX += Math.cos(state.player.direction - Math.PI / 2);
+                moveY += Math.sin(state.player.direction - Math.PI / 2);
+                state.player.isMoving = true;
+            }
+            if (state.keyState['KeyD'] || state.keyState['ArrowRight']) {
+                moveX += Math.cos(state.player.direction + Math.PI / 2);
+                moveY += Math.sin(state.player.direction + Math.PI / 2);
+                state.player.isMoving = true;
+            }
+            
+            // Normalize movement vector
+            if (moveX !== 0 || moveY !== 0) {
+                const length = Math.sqrt(moveX * moveX + moveY * moveY);
+                moveX /= length;
+                moveY /= length;
+                
+                state.player.movingDirection = { x: moveX, y: moveY };
+            }
+            
+            // Update running state
+            state.player.isRunning = state.keyState['ShiftLeft'] || state.keyState['ShiftRight'];
+            const speed = config.playerSpeed * (state.player.isRunning ? config.playerRunMultiplier : 1);
+            
+            // Apply movement with collision detection
+            if (state.player.isMoving) {
+                // Calculate new position
+                const newX = state.player.x + moveX * speed * deltaTime;
+                const newY = state.player.y + moveY * speed * deltaTime;
+                
+                // Check collision with walls and doors
+                const checkCollision = (x, y) => {
+                    const cellX = Math.floor(x);
+                    const cellY = Math.floor(y);
+                    
+                    // Check if position is inside wall
+                    if (state.currentMap[cellY]?.[cellX] === 1) {
+                        return true;
+                    }
+                    
+                    // Check doors
+                    if (state.currentMap[cellY]?.[cellX] === 2) {
+                        const door = state.doors.find(d => d.x === cellX && d.y === cellY);
+                        return !door || !door.open || door.openAmount < 0.5;
+                    }
+                    
+                    return false;
+                };
+                
+                // Collision detection with buffer
+                const buffer = 0.2;
+                
+                // Try to move in X direction
+                if (!checkCollision(newX + buffer * Math.sign(moveX), state.player.y) && 
+                    !checkCollision(newX + buffer * Math.sign(moveX), state.player.y + buffer) && 
+                    !checkCollision(newX + buffer * Math.sign(moveX), state.player.y - buffer)) {
+                    state.player.x = newX;
+                }
+                
+                // Try to move in Y direction
+                if (!checkCollision(state.player.x, newY + buffer * Math.sign(moveY)) && 
+                    !checkCollision(state.player.x + buffer, newY + buffer * Math.sign(moveY)) && 
+                    !checkCollision(state.player.x - buffer, newY + buffer * Math.sign(moveY))) {
+                    state.player.y = newY;
+                }
+                
+                // Update bobbing effect
+                state.player.bobPhase += deltaTime * (state.player.isRunning ? 0.02 : 0.01);
+            }
+        }
+
+        // Update doors
+        function updateDoors(deltaTime) {
+            for (const door of state.doors) {
+                if (door.open && door.openAmount < 1) {
+                    // Door is opening
+                    door.openAmount = Math.min(1, door.openAmount + deltaTime * 0.002);
+                } else if (!door.open && door.openAmount > 0) {
+                    // Door is closing
+                    door.openAmount = Math.max(0, door.openAmount - deltaTime * 0.002);
+                }
+            }
+        }
+
+        // Try to open a door
+        function tryOpenDoor() {
+            // Check for doors in front of player
+            const dirX = Math.cos(state.player.direction);
+            const dirY = Math.sin(state.player.direction);
+            
+            // Check a few distances in front of player
+            for (let dist = 0.5; dist <= 2; dist += 0.5) {
+                const checkX = Math.floor(state.player.x + dirX * dist);
+                const checkY = Math.floor(state.player.y + dirY * dist);
+                
+                // Check if there's a door
+                if (state.currentMap[checkY]?.[checkX] === 2) {
+                    const door = state.doors.find(d => d.x === checkX && d.y === checkY);
+                    if (door) {
+                        door.open = !door.open;
+                        
+                        // Play door sound
+                        playSound(door.open ? 'door_open' : 'door_close');
+                        return true;
+                    }
+                }
+            }
+            
+            return false;
+        }
+
+        // Update enemies
+        function updateEnemies(deltaTime) {
+            for (let i = state.enemies.length - 1; i >= 0; i--) {
+                const enemy = state.enemies[i];
+                
+                // Skip if enemy is dead
+                if (enemy.health <= 0) {
+                    state.enemies.splice(i, 1);
+                    state.kills++;
+                    killsValue.textContent = state.kills;
+                    
+                    // Play death sound
+                    playSound('enemy_death');
+                    
+                    // Check if level is complete
+                    if (state.enemies.length === 0) {
+                        state.levelComplete = true;
+                        document.exitPointerLock();
+                        levelKills.textContent = state.kills;
+                        levelComplete.style.display = 'block';
+                    }
+                    
+                    continue;
+                }
+                
+                // Calculate distance to player
+                const distX = state.player.x - enemy.x;
+                const distY = state.player.y - enemy.y;
+                const distance = Math.sqrt(distX * distX + distY * distY);
+                
+                // Determine enemy state
+                if (distance < 8) {
+                    // Can see player, chase
+                    enemy.state = 'chase';
+                    enemy.targetX = state.player.x;
+                    enemy.targetY = state.player.y;
+                } else if (enemy.state !== 'patrol') {
+                    // Lost player, go back to patrol
+                    enemy.state = 'patrol';
+                    enemy.patrolPhase = Math.random() * Math.PI * 2;
+                }
+                
+                // Update patrol targets
+                if (enemy.state === 'patrol') {
+                    enemy.patrolPhase += deltaTime * 0.001;
+                    
+                    // Generate circular patrol pattern
+                    const patrolRadius = 2;
+                    const baseX = Math.floor(enemy.x);
+                    const baseY = Math.floor(enemy.y);
+                    
+                    enemy.targetX = baseX + 0.5 + Math.cos(enemy.patrolPhase) * patrolRadius;
+                    enemy.targetY = baseY + 0.5 + Math.sin(enemy.patrolPhase) * patrolRadius;
+                    
+                    // Check if target is in a wall
+                    const targetCellX = Math.floor(enemy.targetX);
+                    const targetCellY = Math.floor(enemy.targetY);
+                    
+                    if (state.currentMap[targetCellY]?.[targetCellX] !== 0) {
+                        // Find new base position
+                        let newBaseFound = false;
+                        
+                        for (let y = baseY - 1; y <= baseY + 1; y++) {
+                            for (let x = baseX - 1; x <= baseX + 1; x++) {
+                                if (state.currentMap[y]?.[x] === 0) {
+                                    enemy.x = x + 0.5;
+                                    enemy.y = y + 0.5;
+                                    newBaseFound = true;
+                                    break;
+                                }
+                            }
+                            if (newBaseFound) break;
+                        }
+                    }
+                }
+                
+                // Move enemy toward target
+                const targetDistX = enemy.targetX - enemy.x;
+                const targetDistY = enemy.targetY - enemy.y;
+                const targetDistance = Math.sqrt(targetDistX * targetDistX + targetDistY * targetDistY);
+                
+                if (targetDistance > 0.1) {
+                    const moveSpeed = enemy.type.speed * deltaTime;
+                    const moveX = targetDistX / targetDistance * moveSpeed;
+                    const moveY = targetDistY / targetDistance * moveSpeed;
+                    
+                    // Try to move with basic collision detection
+                    const newX = enemy.x + moveX;
+                    const newY = enemy.y + moveY;
+                    
+                    // Check collision with walls and doors
+                    const newCellX = Math.floor(newX);
+                    const newCellY = Math.floor(newY);
+                    
+                    const canMoveX = state.currentMap[Math.floor(enemy.y)]?.[newCellX] === 0;
+                    const canMoveY = state.currentMap[newCellY]?.[Math.floor(enemy.x)] === 0;
+                    
+                    if (canMoveX) enemy.x = newX;
+                    if (canMoveY) enemy.y = newY;
+                    
+                    // If stuck, try to find a new path
+                    if (!canMoveX && !canMoveY && enemy.state === 'chase') {
+                        // Simple attempt to go around obstacle
+                        const alternateAngle = Math.atan2(targetDistY, targetDistX) + (Math.random() > 0.5 ? 1 : -1) * Math.PI / 2;
+                        
+                        enemy.targetX = enemy.x + Math.cos(alternateAngle) * 2;
+                        enemy.targetY = enemy.y + Math.sin(alternateAngle) * 2;
+                    }
+                }
+                
+                // Attack player if close enough
+                if (distance < enemy.type.attackRange) {
+                    const now = performance.now();
+                    if (now - enemy.lastAttack > enemy.type.attackSpeed) {
+                        // Damage player
+                        damagePlayer(enemy.type.damage);
+                        enemy.lastAttack = now;
+                        
+                        // Play attack sound
+                        playSound('enemy_attack');
+                    }
+                }
+            }
+        }
+
+        // Damage player
+        function damagePlayer(amount) {
+            // Apply damage
+            state.player.health = Math.max(0, state.player.health - amount);
+            
+            // Update UI
+            healthValue.textContent = state.player.health;
+            healthBar.style.setProperty('--health', state.player.health + '%');
+            healthBar.querySelector('::after').style.width = state.player.health + '%';
+            
+            // Show damage flash
+            damageFlash.style.display = 'block';
+            setTimeout(() => {
+                damageFlash.style.display = 'none';
+            }, 100);
+            
+            // Apply camera shake
+            state.shake = {
+                intensity: 10,
+                duration: 300,
+                startTime: performance.now()
+            };
+            
+            // Check if player is dead
+            if (state.player.health <= 0) {
+                playerDeath();
+            }
+        }
+
+        // Player death
+        function playerDeath() {
+            state.running = false;
+            document.exitPointerLock();
+            gameOver.style.display = 'flex';
+            
+            // Play death sound
+            playSound('player_death');
+        }
+
+        // Shoot weapon
+        function shootWeapon() {
+            const now = performance.now();
+            
+            // Check if can shoot (cooldown and ammo)
+            if (now - state.player.lastShootTime < config.shootCooldown || state.player.ammo <= 0) {
+                return;
+            }
+            
+            // Set shooting state and update last shoot time
+            state.player.shooting = true;
+            state.player.lastShootTime = now;
+            
+            // Decrease ammo
+            state.player.ammo--;
+            ammoValue.textContent = state.player.ammo;
+            ammoBar.style.setProperty('--ammo', (state.player.ammo / config.maxAmmo * 100) + '%');
+            ammoBar.querySelector('::after').style.width = (state.player.ammo / config.maxAmmo * 100) + '%';
+            
+            // Play shoot sound
+            playSound('shoot');
+            
+            // Apply camera shake
+            state.shake = {
+                intensity: 5,
+                duration: 100,
+                startTime: performance.now()
+            };
+            
+            // Check if hit any enemies
+            const rayAngle = state.player.direction;
+            const ray = castRay(rayAngle);
+            
+            let closestEnemy = null;
+            let closestDistance = Infinity;
+            
+            // Check all enemies to see if they're in front of the player
+            for (const enemy of state.enemies) {
+                // Direction to enemy relative to player
+                const enemyDirX = enemy.x - state.player.x;
+                const enemyDirY = enemy.y - state.player.y;
+                
+                // Distance to enemy
+                const distance = Math.sqrt(enemyDirX * enemyDirX + enemyDirY * enemyDirY);
+                
+                // Angle between player direction and enemy
+                const enemyAngle = Math.atan2(enemyDirY, enemyDirX);
+                let relativeAngle = enemyAngle - state.player.direction;
+                
+                // Normalize angle to -PI to PI range
+                while (relativeAngle > Math.PI) relativeAngle -= 2 * Math.PI;
+                while (relativeAngle < -Math.PI) relativeAngle += 2 * Math.PI;
+                
+                // Check if enemy is in view and closer than wall
+                if (Math.abs(relativeAngle) < 0.2 && distance < ray.distance && distance < closestDistance) {
+                    closestEnemy = enemy;
+                    closestDistance = distance;
+                }
+            }
+            
+            // If hit an enemy, damage it
+            if (closestEnemy) {
+                closestEnemy.health -= config.shootDamage;
+                playSound('enemy_hit');
+            }
+            
+            // Reset shooting state after a short delay
+            setTimeout(() => {
+                state.player.shooting = false;
+            }, 100);
+        }
+
+        // Update stats
+        function updateStats(deltaTime) {
+            // Update FPS counter
+            state.frameCount++;
+            state.frameTime += deltaTime;
+            
+            if (state.frameTime >= 1000) {
+                state.fps = Math.round(state.frameCount / (state.frameTime / 1000));
+                fpsCounter.textContent = `FPS: ${state.fps}`;
+                
+                state.frameCount = 0;
+                state.frameTime = 0;
+            }
+        }
+
+        // Play sound effects (simple audio synthesis)
+        function playSound(type) {
+            // Create audio context
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            const audioCtx = new AudioContext();
+            
+            // Create oscillator
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            // Connect nodes
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            // Set sound parameters based on type
+            switch (type) {
+                case 'shoot':
+                    oscillator.type = 'sawtooth';
+                    oscillator.frequency.setValueAtTime(200, audioCtx.currentTime);
+                    oscillator.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + 0.3);
+                    
+                    gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                    
+                    oscillator.start();
+                    oscillator.stop(audioCtx.currentTime + 0.3);
+                    break;
+                
+                case 'enemy_hit':
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(300, audioCtx.currentTime);
+                    oscillator.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.2);
+                    
+                    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+                    
+                    oscillator.start();
+                    oscillator.stop(audioCtx.currentTime + 0.2);
+                    break;
+                
+                case 'enemy_death':
+                    oscillator.type = 'sawtooth';
+                    oscillator.frequency.setValueAtTime(150, audioCtx.currentTime);
+                    oscillator.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + 0.5);
+                    
+                    gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                    
+                    oscillator.start();
+                    oscillator.stop(audioCtx.currentTime + 0.5);
+                    break;
+                
+                case 'enemy_attack':
+                    oscillator.type = 'square';
+                    oscillator.frequency.setValueAtTime(100, audioCtx.currentTime);
+                    oscillator.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.1);
+                    oscillator.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.2);
+                    
+                    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+                    
+                    oscillator.start();
+                    oscillator.stop(audioCtx.currentTime + 0.2);
+                    break;
+                
+                case 'player_death':
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(300, audioCtx.currentTime);
+                    oscillator.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 1);
+                    
+                    gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1);
+                    
+                    oscillator.start();
+                    oscillator.stop(audioCtx.currentTime + 1);
+                    break;
+                
+                case 'door_open':
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(100, audioCtx.currentTime);
+                    oscillator.frequency.linearRampToValueAtTime(200, audioCtx.currentTime + 0.5);
+                    
+                    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                    
+                    oscillator.start();
+                    oscillator.stop(audioCtx.currentTime + 0.5);
+                    break;
+                
+                case 'door_close':
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(200, audioCtx.currentTime);
+                    oscillator.frequency.linearRampToValueAtTime(100, audioCtx.currentTime + 0.5);
+                    
+                    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                    
+                    oscillator.start();
+                    oscillator.stop(audioCtx.currentTime + 0.5);
+                    break;
+            }
+        }
+
+        // Game loop
+        function gameLoop(timestamp) {
+            if (!state.running) return;
+            
+            // Calculate delta time
+            const deltaTime = timestamp - state.lastTime;
+            state.lastTime = timestamp;
+            
+            // Skip if delta time is too large (tab was inactive)
+            if (deltaTime > 100) {
+                requestAnimationFrame(gameLoop);
+                return;
+            }
+            
+            // Update player movement
+            updatePlayerMovement(deltaTime);
+            
+            // Update doors
+            updateDoors(deltaTime);
+            
+            // Update enemies
+            updateEnemies(deltaTime);
+            
+            // Update weapon display
+            generateWeaponSVG();
+            
+            // Draw 3D view
+            draw3DView();
+            
+            // Draw minimap
+            drawMinimap();
+            
+            // Update stats
+            updateStats(deltaTime);
+            
+            // Request next frame
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Event listeners
+        document.addEventListener('keydown', (e) => {
+            state.keyState[e.code] = true;
+            
+            // Space to open doors
+            if (e.code === 'Space' && state.running) {
+                tryOpenDoor();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            state.keyState[e.code] = false;
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (state.running && document.pointerLockElement === gameCanvas) {
+                state.player.direction += e.movementX * config.playerTurnSpeed / 100;
+            }
+        });
+
+        document.addEventListener('mousedown', (e) => {
+            if (state.running && e.button === 0) {
+                shootWeapon();
+            }
+        });
+
+        document.addEventListener('pointerlockchange', () => {
+            if (document.pointerLockElement !== gameCanvas && state.running && !state.levelComplete) {
+                // Game is paused
+                state.running = false;
+            } else if (document.pointerLockElement === gameCanvas && !state.running && !state.levelComplete) {
+                // Game is resumed
+                state.running = true;
+                state.lastTime = performance.now();
+                requestAnimationFrame(gameLoop);
+            }
+        });
+
+        // Start screen button
+        startBtn.addEventListener('click', () => {
+            startGame();
+        });
+
+        // Restart button
+        restartBtn.addEventListener('click', () => {
+            restartGame();
+        });
+
+        // Next level button
+        nextLevelBtn.addEventListener('click', () => {
+            nextLevel();
+        });
+
+        // Make health and ammo bars work with CSS custom properties
+        healthBar.style.setProperty('--health', '100%');
+        ammoBar.style.setProperty('--ammo', '100%');
+    </script>
+</body>
+</html>
